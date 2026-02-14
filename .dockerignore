@@ -1,0 +1,13 @@
+.git
+.github
+.task
+.env
+data/
+*.md
+LICENSE
+Taskfile.yml
+Procfile.dev
+docker-compose.dev.yml
+web/node_modules
+web/.react-router
+web/build
