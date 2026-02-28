@@ -1,0 +1,33 @@
+name: Golang CI
+
+on: pull_request
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  mcvs-golang-action:
+    strategy:
+      matrix:
+        args:
+          - testing-type: lint
+            build-tags: component
+          - testing-type: lint
+            build-tags: e2e
+          - testing-type: lint
+            build-tags: integration
+          - testing-type: opa
+          - testing-type: security-golang-modules
+          - testing-type: unit
+    runs-on: ubuntu-24.04
+    env:
+      TASK_X_REMOTE_TASKFILES: 1
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: schubergphilis/mcvs-golang-action@v3.11.2
+        with:
+          build-tags: ${{ matrix.args.build-tags }}
+          code-coverage-opa-expected: 100.00
+          github-token-for-downloading-private-go-modules: ${{ secrets.GITHUB_TOKEN }}
+          testing-type: ${{ matrix.args.testing-type }}

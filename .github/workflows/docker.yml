@@ -1,0 +1,26 @@
+name: Docker CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "docker/**"
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+
+jobs:
+  build:
+    name: Build Image
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t flightlog .
+
+      - name: Validate compose config
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.dev.yml config --quiet
