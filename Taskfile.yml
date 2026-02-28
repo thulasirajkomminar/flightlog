@@ -1,0 +1,69 @@
+---
+version: 3
+vars:
+  REMOTE_URL: https://raw.githubusercontent.com
+  REMOTE_URL_REF: v3.11.2
+  REMOTE_URL_REPO: schubergphilis/mcvs-golang-action
+includes:
+  remote:
+    taskfile: >-
+      {{.REMOTE_URL}}/{{.REMOTE_URL_REPO}}/{{.REMOTE_URL_REF}}/build/task.yml
+    vars:
+      GOLANGCI_LINT_RUN_TIMEOUT_MINUTES: 10
+  web:
+    taskfile: ./web/Taskfile.yml
+    dir: ./web
+
+tasks:
+  fix:
+    desc: Auto-fix lint and format issues (backend + frontend)
+    cmds:
+      - task: tagalign
+      - task: remote:format
+      - task: web:fix
+
+  tagalign:
+    desc: Check struct tags alignment
+    cmd: go run github.com/4meepo/tagalign/cmd/tagalign@latest -fix -order "json,yaml,yml,toml,mapstructure,binding,validate,db,gorm" ./...
+
+  generate:
+    desc: Generate Go client from OpenAPI specs
+    cmd: go generate ./internal/provider/aerodatabox/api/...
+
+  api:
+    desc: Run Go API server
+    cmd: go run ./cmd/api
+
+  web:
+    desc: Run frontend dev server
+    cmd: task web:dev
+
+  dev:
+    desc: Run API and frontend locally
+    deps: [setup]
+    cmd: overmind start -f Procfile.dev
+
+  setup:
+    desc: Install all dependencies (Go + frontend)
+    cmds:
+      - go mod download
+      - task: web:install
+
+  seed:
+    desc: Seed the database with sample data
+    cmd: go run ./cmd/seed
+
+  reseed:
+    desc: Wipe and re-seed the database
+    cmd: go run ./cmd/seed reseed
+
+  default:
+    desc: Run all backend and frontend checks
+    cmds:
+      - task: tagalign
+      - task: remote:format
+      - task: remote:lint
+      - task: remote:opa
+      - task: remote:test
+      - task: generate
+      - task: web:default
