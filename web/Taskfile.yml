@@ -1,0 +1,64 @@
+---
+version: 3
+
+tasks:
+  dev:
+    desc: Run React frontend dev server
+    cmd: pnpm run dev
+
+  build:
+    desc: Build frontend for production
+    cmd: pnpm build
+
+  install:
+    desc: Install dependencies
+    cmd: pnpm install --frozen-lockfile
+
+  lint:
+    desc: Lint frontend code
+    cmd: pnpm lint
+
+  lint-fix:
+    desc: Auto-fix frontend linting issues
+    cmd: pnpm lint --fix
+
+  format:
+    desc: Format frontend code
+    cmd: pnpm format
+
+  format-check:
+    desc: Check frontend formatting
+    cmd: pnpm format:check
+
+  typecheck:
+    desc: TypeScript type checking
+    cmd: pnpm typecheck
+
+  audit:
+    desc: Frontend security audit
+    cmd: pnpm audit
+
+  deadcode:
+    desc: Find unused exports and dead code
+    cmd: pnpm deadcode
+
+  depcheck:
+    desc: Check for unused dependencies
+    cmd: pnpm depcheck
+
+  fix:
+    desc: Auto-fix lint and format issues
+    cmds:
+      - task: lint-fix
+      - task: format
+
+  default:
+    desc: Run all web checks (CI)
+    cmds:
+      - task: install
+      - task: typecheck
+      - task: lint
+      - task: format-check
+      - task: build
+      - task: deadcode
+      - task: depcheck
