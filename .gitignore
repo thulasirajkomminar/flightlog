@@ -40,5 +40,6 @@ internal/web/dist/
 # Web
 web/.react-router/
 web/build/
+!web/app/lib/
 
 .overmind.sock

@@ -28,7 +28,7 @@ import {
 } from "~/components/ui/collapsible"
 import { Item } from "~/components/ui/item"
 import { Separator } from "~/components/ui/separator"
-import { formatTime } from "~/lib/utils"
+import { formatTime } from "~/lib/format"
 
 import type { Flight, Movement } from "~/types"
 
