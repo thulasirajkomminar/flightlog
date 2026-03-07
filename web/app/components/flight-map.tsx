@@ -101,7 +101,7 @@ export default function FlightMap({ flights }: FlightMapProps) {
       const points = Array.from(airports.values()).map(
         (a) => [a.lat, a.lng] as [number, number]
       )
-      mapRef.current.fitBounds(points, { padding: [50, 50] })
+      mapRef.current.fitBounds(points, { padding: [50, 50], maxZoom: 10 })
     }
   }, [airports])
 
@@ -110,6 +110,12 @@ export default function FlightMap({ flights }: FlightMapProps) {
       ref={mapRef}
       center={[30, 0]}
       zoom={2}
+      minZoom={2}
+      maxBounds={[
+        [-90, -180],
+        [90, 180],
+      ]}
+      maxBoundsViscosity={1.0}
       className="h-full w-full"
       scrollWheelZoom={true}
       zoomControl={false}
