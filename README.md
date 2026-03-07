@@ -20,10 +20,6 @@ A simple app to track and manage your flight history.
 
 ![My Flights](docs/assets/screenshots/04-my-flights-page.png)
 
-![Profile](docs/assets/screenshots/05-sidebar-profile.png)
-
-![Edit Profile](docs/assets/screenshots/06-edit-profile-page.png)
-
 ## Getting Started
 
 ### Flight Data Provider

@@ -1,9 +1,11 @@
+"use client"
+
 import * as React from "react"
-import { XIcon } from "@phosphor-icons/react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
-import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
+import { Button } from "~/components/ui/button"
+import { XIcon } from "@phosphor-icons/react"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -73,7 +75,8 @@ function SheetContent({
               className="absolute top-4 right-4"
               size="icon-sm"
             >
-              <XIcon />
+              <XIcon
+              />
               <span className="sr-only">Close</span>
             </Button>
           </SheetPrimitive.Close>
@@ -131,11 +134,11 @@ function SheetDescription({
 
 export {
   Sheet,
+  SheetTrigger,
   SheetClose,
   SheetContent,
-  SheetDescription,
-  SheetFooter,
   SheetHeader,
+  SheetFooter,
   SheetTitle,
-  SheetTrigger,
+  SheetDescription,
 }
