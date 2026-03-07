@@ -1,8 +1,8 @@
 import * as React from "react"
+import { CaretRightIcon, DotsThreeIcon } from "@phosphor-icons/react"
 import { Slot } from "radix-ui"
 
 import { cn } from "~/lib/utils"
-import { CaretRightIcon, DotsThreeIcon } from "@phosphor-icons/react"
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
   return (
@@ -82,9 +82,7 @@ function BreadcrumbSeparator({
       className={cn("[&>svg]:size-3.5", className)}
       {...props}
     >
-      {children ?? (
-        <CaretRightIcon />
-      )}
+      {children ?? <CaretRightIcon />}
     </li>
   )
 }
@@ -104,8 +102,7 @@ function BreadcrumbEllipsis({
       )}
       {...props}
     >
-      <DotsThreeIcon
-      />
+      <DotsThreeIcon />
       <span className="sr-only">More</span>
     </span>
   )
@@ -113,10 +110,10 @@ function BreadcrumbEllipsis({
 
 export {
   Breadcrumb,
-  BreadcrumbList,
+  BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
+  BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  BreadcrumbEllipsis,
 }
