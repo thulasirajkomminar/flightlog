@@ -92,7 +92,7 @@ export function AppSidebar() {
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="text-base font-semibold">Flightlog</span>
                   <span className="text-xs text-muted-foreground">
-                    Flight tracker
+                    Personal flight logbook
                   </span>
                 </div>
               </Link>

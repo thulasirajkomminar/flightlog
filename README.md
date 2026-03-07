@@ -8,7 +8,7 @@
 </h1>
 <!-- markdownlint-enable MD033 -->
 
-A simple app to track and manage your flight history.
+A simple app to log and manage your flight history.
 
 ## Screenshots
 
