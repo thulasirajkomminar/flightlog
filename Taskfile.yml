@@ -57,6 +57,24 @@ tasks:
     desc: Wipe and re-seed the database
     cmd: go run ./cmd/seed reseed
 
+  up:
+    desc: Start all services in Docker
+    cmd: docker compose -f docker-compose.dev.yml up -d
+
+  down:
+    desc: Stop Docker services
+    cmd: docker compose -f docker-compose.dev.yml down
+
+  clean:
+    desc: Remove all containers, volumes and data
+    cmds:
+      - docker compose -f docker-compose.dev.yml down -v
+
+  build:
+    desc: Build all Docker images
+    cmds:
+      - docker compose -f docker-compose.dev.yml build --no-cache
+
   default:
     desc: Run all backend and frontend checks
     cmds:

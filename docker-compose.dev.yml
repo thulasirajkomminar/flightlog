@@ -1,0 +1,21 @@
+services:
+  flightlog:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flightlog
+    env_file:
+      - .env
+    image: flightlog
+    ports:
+      - 8080:8080
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - flightlog_data:/data
+volumes:
+  flightlog_data:
