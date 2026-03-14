@@ -36,15 +36,9 @@ RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-RUN addgroup -S flightlog && adduser -S flightlog -G flightlog
-
 COPY --from=backend-builder /app/main .
 
-RUN mkdir -p /data && chown flightlog:flightlog /data
-
-USER flightlog
-
-ENV DATABASE_PATH=/data/flightlog.db
+RUN mkdir -p /app/data
 
 EXPOSE 8080
 

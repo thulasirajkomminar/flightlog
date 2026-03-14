@@ -69,7 +69,7 @@ services:
     ports:
       - 8080:8080
     volumes:
-      - flightlog_data:/data
+      - flightlog_data:/app/data
     restart: unless-stopped
 volumes:
   flightlog_data:
