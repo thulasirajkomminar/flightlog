@@ -59,6 +59,8 @@ Copy `.env.example` to `.env` and set the required values.
 
 ### Deployment
 
+#### Simple Docker
+
 Create a `docker-compose.yml`:
 
 ```yaml
@@ -73,6 +75,37 @@ services:
     restart: unless-stopped
 volumes:
   flightlog_data:
+```
+
+```bash
+docker compose up -d
+```
+
+#### Flightlog with Traefik
+
+```yaml
+services:
+  flightlog:
+    container_name: flightlog
+    environment:
+      - AERODATABOX_API_KEY=${AERODATABOX_API_KEY}
+      - AUTH_JWT_SECRET=${AUTH_JWT_SECRET}
+    image: ghcr.io/thulasirajkomminar/flightlog:latest
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.flightlog.entrypoints=websecure
+      - traefik.http.routers.flightlog.rule=Host(`flightlog.example.com`)
+      - traefik.http.routers.flightlog.tls=true
+      - traefik.http.routers.flightlog.tls.certresolver=cloudflare
+      - traefik.http.services.flightlog.loadbalancer.server.port=8080
+    networks:
+      - proxy
+    restart: unless-stopped
+    volumes:
+      - /opt/docker/flightlog/data:/app/data
+networks:
+  proxy:
+    external: true
 ```
 
 ```bash
