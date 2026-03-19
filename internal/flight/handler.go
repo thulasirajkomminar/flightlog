@@ -24,6 +24,9 @@ const (
 	errInternal         = "internal server error"
 )
 
+// ErrInvalidStatus is returned when an unknown flight status is provided.
+var ErrInvalidStatus = errors.New("invalid status")
+
 // Handler handles flight HTTP endpoints.
 type Handler struct {
 	flightService *Service
@@ -128,7 +131,7 @@ func parseIntParam(r *http.Request, key string) (int, bool) {
 	return v, true
 }
 
-func parseCriteria(r *http.Request, userID string) domain.FlightSearchCriteria {
+func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria, error) {
 	criteria := domain.FlightSearchCriteria{
 		UserID: userID,
 		Limit:  defaultListLimit,
@@ -146,7 +149,15 @@ func parseCriteria(r *http.Request, userID string) domain.FlightSearchCriteria {
 		criteria.Year = v
 	}
 
-	return criteria
+	if s := r.URL.Query().Get("status"); s != "" {
+		if !domain.ValidFlightStatus(domain.FlightStatus(s)) {
+			return criteria, fmt.Errorf("%w: %s", ErrInvalidStatus, s)
+		}
+
+		criteria.Status = domain.FlightStatus(s)
+	}
+
+	return criteria, nil
 }
 
 // ListFlights lists the authenticated user's flights.
@@ -158,7 +169,12 @@ func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	criteria := parseCriteria(r, user.UserID)
+	criteria, err := parseCriteria(r, user.UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, err.Error())
+
+		return
+	}
 
 	flights, total, err := h.flightService.ListFlights(r.Context(), &criteria)
 	if err != nil {

@@ -15,7 +15,7 @@ export function useDashboardData() {
   const loadData = useCallback(async () => {
     try {
       const [flightData, statsData] = await Promise.all([
-        flightService.list(1000),
+        flightService.list(1000, 0, undefined, "landed"),
         flightService.stats(),
       ])
       setFlights(flightData.flights || [])

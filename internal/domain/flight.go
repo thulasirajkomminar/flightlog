@@ -20,6 +20,17 @@ const (
 	FlightStatusDiverted  FlightStatus = "diverted"
 )
 
+// ValidFlightStatus checks for validity of a flight status value.
+func ValidFlightStatus(s FlightStatus) bool {
+	switch s {
+	case FlightStatusScheduled, FlightStatusActive, FlightStatusLanded,
+		FlightStatusCancelled, FlightStatusIncident, FlightStatusDiverted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Location holds a WGS84 latitude/longitude pair.
 type Location struct {
 	Lat float64 `json:"lat" gorm:"column:lat"`
@@ -113,6 +124,7 @@ type UserFlight struct {
 type FlightSearchCriteria struct {
 	UserID string
 	Year   int
+	Status FlightStatus
 	Limit  int
 	Offset int
 }

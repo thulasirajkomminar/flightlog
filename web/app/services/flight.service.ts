@@ -7,7 +7,8 @@ export const flightService = {
   async list(
     limit = 20,
     offset = 0,
-    year?: number
+    year?: number,
+    status?: string
   ): Promise<FlightListResponse> {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -15,6 +16,9 @@ export const flightService = {
     })
     if (year) {
       params.set("year", String(year))
+    }
+    if (status) {
+      params.set("status", status)
     }
     return api.get<FlightListResponse>(
       `${API_ENDPOINTS.FLIGHTS.LIST}?${params}`

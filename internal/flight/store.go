@@ -231,6 +231,10 @@ func applyFilters(query *gorm.DB, criteria *domain.FlightSearchCriteria) *gorm.D
 		query = query.Where("CAST(strftime('%Y', flight_date) AS INTEGER) = ?", criteria.Year)
 	}
 
+	if criteria.Status != "" {
+		query = query.Where("flights.status = ?", criteria.Status)
+	}
+
 	return query
 }
 
