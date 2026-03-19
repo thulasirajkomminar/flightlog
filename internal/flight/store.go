@@ -131,6 +131,22 @@ func (s *UserFlightStore) List(ctx context.Context, criteria *domain.FlightSearc
 	return flights, nil
 }
 
+// ListAll returns all flights for a user without pagination.
+func (s *UserFlightStore) ListAll(ctx context.Context, userID string) ([]*domain.Flight, error) {
+	var flights []*domain.Flight
+
+	err := s.db.WithContext(ctx).Model(&domain.Flight{}).
+		Joins("JOIN user_flights ON user_flights.flight_id = flights.id").
+		Where("user_flights.user_id = ?", userID).
+		Order("flights.flight_date DESC").
+		Find(&flights).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return flights, nil
+}
+
 // Count returns total flights matching the criteria.
 func (s *UserFlightStore) Count(ctx context.Context, criteria *domain.FlightSearchCriteria) (int64, error) {
 	var count int64

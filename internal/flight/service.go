@@ -33,6 +33,7 @@ type UserFlightRepository interface {
 	Remove(ctx context.Context, userID, flightID string) error
 	Get(ctx context.Context, userID, flightID string) (*domain.UserFlight, error)
 	List(ctx context.Context, criteria *domain.FlightSearchCriteria) ([]*domain.Flight, error)
+	ListAll(ctx context.Context, userID string) ([]*domain.Flight, error)
 	Count(ctx context.Context, criteria *domain.FlightSearchCriteria) (int64, error)
 	GetYears(ctx context.Context, userID string) ([]int, error)
 	GetStats(ctx context.Context, userID string) (*domain.FlightStats, error)
@@ -156,6 +157,18 @@ func (s *Service) DeleteFlight(ctx context.Context, userID, flightID string) err
 	)
 
 	return nil
+}
+
+// ExportFlights returns all flights for a user without pagination.
+func (s *Service) ExportFlights(ctx context.Context, userID string) ([]*domain.Flight, error) {
+	flights, err := s.userRepo.ListAll(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("export flights for user %s: %w", userID, err)
+	}
+
+	formatFlightNumbers(flights)
+
+	return flights, nil
 }
 
 // GetStats returns aggregated flight statistics for a user.

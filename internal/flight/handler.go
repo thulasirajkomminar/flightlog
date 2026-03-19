@@ -2,7 +2,9 @@
 package flight
 
 import (
+	"encoding/csv"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -223,6 +225,80 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.RespondJSON(w, http.StatusOK, stats)
+}
+
+// ExportFlights returns all user flights as a CSV file download.
+func (h *Handler) ExportFlights(w http.ResponseWriter, r *http.Request) {
+	user := api.GetUser(r)
+	if user == nil {
+		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
+
+		return
+	}
+
+	flights, err := h.flightService.ExportFlights(r.Context(), user.UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="flightlog-export.csv"`)
+
+	cw := csv.NewWriter(w)
+
+	err = cw.Write(csvHeader())
+	if err != nil {
+		return
+	}
+
+	for _, f := range flights {
+		err = cw.Write(flightToRow(f))
+		if err != nil {
+			return
+		}
+	}
+
+	cw.Flush()
+}
+
+func csvHeader() []string {
+	return []string{
+		"date", "flight_number", "status",
+		"airline", "airline_iata", "airline_icao",
+		"departure_iata", "departure_icao", "departure_airport", "departure_city", "departure_country",
+		"departure_time_utc", "departure_time_local", "departure_terminal", "departure_gate",
+		"arrival_iata", "arrival_icao", "arrival_airport", "arrival_city", "arrival_country",
+		"arrival_time_utc", "arrival_time_local", "arrival_terminal", "arrival_gate",
+		"aircraft_model", "aircraft_registration",
+		"distance_km",
+	}
+}
+
+func flightToRow(f *domain.Flight) []string {
+	return []string{
+		f.FlightDate, f.Number, string(f.Status),
+		f.Airline.Name, f.Airline.IATA, f.Airline.ICAO,
+		f.Departure.Airport.IATA, f.Departure.Airport.ICAO, f.Departure.Airport.Name,
+		f.Departure.Airport.MunicipalityName, f.Departure.Airport.CountryCode,
+		formatTimePtr(f.Departure.ScheduledTime.UTC), f.Departure.ScheduledTime.Local,
+		f.Departure.Terminal, f.Departure.Gate,
+		f.Arrival.Airport.IATA, f.Arrival.Airport.ICAO, f.Arrival.Airport.Name,
+		f.Arrival.Airport.MunicipalityName, f.Arrival.Airport.CountryCode,
+		formatTimePtr(f.Arrival.ScheduledTime.UTC), f.Arrival.ScheduledTime.Local,
+		f.Arrival.Terminal, f.Arrival.Gate,
+		f.Aircraft.Model, f.Aircraft.Reg,
+		fmt.Sprintf("%.2f", f.GreatCircleDistance.Km),
+	}
+}
+
+func formatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+
+	return t.Format(time.RFC3339)
 }
 
 // DeleteFlight removes a flight from the user's collection.
