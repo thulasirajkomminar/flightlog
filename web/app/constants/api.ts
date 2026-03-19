@@ -9,6 +9,7 @@ export const API_ENDPOINTS = {
     LIST: "/api/v1/flights",
     SEARCH: "/api/v1/flights/search",
     STATS: "/api/v1/flights/stats",
+    EXPORT: "/api/v1/flights/export",
     BY_ID: (id: string) => `/api/v1/flights/${id}`,
     ADD: (id: string) => `/api/v1/flights/${id}/add`,
   },

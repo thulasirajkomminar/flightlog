@@ -49,4 +49,18 @@ export const flightService = {
   async remove(id: string): Promise<void> {
     return api.delete(API_ENDPOINTS.FLIGHTS.BY_ID(id))
   },
+
+  async exportFlights(): Promise<void> {
+    const response = await fetch(API_ENDPOINTS.FLIGHTS.EXPORT)
+    if (!response.ok) {
+      throw new Error("Failed to export flights")
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "flightlog-export.csv"
+    a.click()
+    URL.revokeObjectURL(url)
+  },
 }
