@@ -84,3 +84,16 @@ export interface FlightStats {
   airports: number
   airlines: number
 }
+
+export interface ImportPreview {
+  total: number
+  enrichable: number
+}
+
+export interface ImportResult {
+  total: number
+  imported: number
+  skipped: number
+  failed: number
+  errors?: { flightNumber: string; date: string; reason: string }[]
+}

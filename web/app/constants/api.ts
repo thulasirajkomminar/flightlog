@@ -17,4 +17,9 @@ export const API_ENDPOINTS = {
     SEARCH: (provider: string) =>
       `/api/v1/providers/${provider}/flights/search`,
   },
+  IMPORT: {
+    SOURCES: "/api/v1/import/sources",
+    PREVIEW: "/api/v1/import/preview",
+    IMPORT: "/api/v1/import",
+  },
 } as const

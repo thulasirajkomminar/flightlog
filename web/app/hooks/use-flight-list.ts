@@ -77,5 +77,6 @@ export function useFlightList() {
     setPage,
     changeYear,
     deleteFlight,
+    refresh: loadFlights,
   }
 }

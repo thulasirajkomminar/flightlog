@@ -3,6 +3,8 @@ export type {
   Flight,
   FlightListResponse,
   FlightStats,
+  ImportPreview,
+  ImportResult,
   Movement,
   User,
 } from "./api"

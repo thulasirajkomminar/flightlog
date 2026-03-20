@@ -2,6 +2,7 @@ import { Airplane, CaretLeft, CaretRight, Export } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
 import { FlightCard } from "~/components/flight-card"
+import { ImportDialog } from "~/components/import-dialog"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,6 +30,7 @@ export default function FlightsPage() {
     setPage,
     changeYear,
     deleteFlight,
+    refresh,
   } = useFlightList()
 
   return (
@@ -46,6 +48,25 @@ export default function FlightsPage() {
       </header>
 
       <div className="flex flex-1 flex-col gap-2 p-4 md:gap-2 md:p-6">
+        <div className="flex justify-end gap-2">
+          <ImportDialog onImported={refresh} />
+          <Button
+            size="lg"
+            disabled={years.length === 0}
+            onClick={async () => {
+              try {
+                await flightService.exportFlights()
+                toast.success("Flights exported")
+              } catch {
+                toast.error("Failed to export flights")
+              }
+            }}
+          >
+            <Export className="size-4" />
+            Export
+          </Button>
+        </div>
+
         {years.length === 0 && !isLoading ? (
           <Card>
             <CardContent className="py-16 text-center">
@@ -57,22 +78,6 @@ export default function FlightsPage() {
           </Card>
         ) : (
           <>
-            <div className="flex justify-end">
-              <Button
-                size="lg"
-                onClick={async () => {
-                  try {
-                    await flightService.exportFlights()
-                    toast.success("Flights exported")
-                  } catch {
-                    toast.error("Failed to export flights")
-                  }
-                }}
-              >
-                <Export className="size-4" />
-                Export
-              </Button>
-            </div>
             <Tabs
               value={selectedYear}
               onValueChange={changeYear}

@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
   server: {
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": {
+        target: "http://localhost:8080",
+        timeout: 600000, // 10 minutes — matches server WriteTimeout
+      },
     },
   },
 })
