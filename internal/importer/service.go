@@ -99,6 +99,7 @@ func NewService(
 	}
 
 	s.RegisterAdapter(&FlightyAdapter{})
+	s.RegisterAdapter(&FlightLogAdapter{})
 
 	return s
 }
@@ -124,8 +125,8 @@ func (s *Service) Preview(entries []ImportEntry) *PreviewResult {
 
 	enrichable := 0
 
-	for _, e := range entries {
-		if e.Date >= cutoff {
+	for i := range entries {
+		if entries[i].Date >= cutoff {
 			enrichable++
 		}
 	}
@@ -291,37 +292,64 @@ func (s *Service) createFromImport(
 		Status:     domain.FlightStatusLanded,
 		Provider:   "import",
 		Airline: domain.FlightAirline{
+			Name: entry.AirlineName,
 			IATA: entry.Airline,
+			ICAO: entry.AirlineICAO,
 		},
 	}
 	flight.GenerateID()
 
 	if entry.Aircraft != "" {
 		flight.Aircraft.Model = entry.Aircraft
+		flight.Aircraft.Reg = entry.AircraftReg
 	}
 
-	flight.Departure.Airport = s.lookupAirport(ctx, entry.DepIATA)
-	flight.Arrival.Airport = s.lookupAirport(ctx, entry.ArrIATA)
+	flight.Departure.Airport = s.resolveAirport(ctx, entry.DepIATA, entry.DepICAO, entry.DepName, entry.DepCity, entry.DepCountry, entry.DepLat, entry.DepLon)
+	flight.Departure.Terminal = entry.DepTerminal
+	flight.Departure.Gate = entry.DepGate
+	flight.Arrival.Airport = s.resolveAirport(ctx, entry.ArrIATA, entry.ArrICAO, entry.ArrName, entry.ArrCity, entry.ArrCountry, entry.ArrLat, entry.ArrLon)
+	flight.Arrival.Terminal = entry.ArrTerminal
+	flight.Arrival.Gate = entry.ArrGate
 
 	if entry.DepTime != nil {
-		flight.Departure.ScheduledTime = domain.TimeInfo{UTC: entry.DepTime}
+		flight.Departure.ScheduledTime = domain.TimeInfo{UTC: entry.DepTime, Local: entry.DepTimeLocal}
 	}
 
 	if entry.ArrTime != nil {
-		flight.Arrival.ScheduledTime = domain.TimeInfo{UTC: entry.ArrTime}
+		flight.Arrival.ScheduledTime = domain.TimeInfo{UTC: entry.ArrTime, Local: entry.ArrTimeLocal}
 	}
 
-	dist, err := s.airports.GetDistanceBetweenAirports(ctx, entry.DepIATA, entry.ArrIATA)
-	if err != nil {
-		s.log.Warn("distance lookup failed",
-			zap.String("route", entry.DepIATA+"-"+entry.ArrIATA),
-			zap.Error(err),
-		)
+	if entry.DistanceKm > 0 {
+		flight.GreatCircleDistance = domain.GreatCircleDistance{Km: entry.DistanceKm}
 	} else {
-		flight.GreatCircleDistance = *dist
+		dist, err := s.airports.GetDistanceBetweenAirports(ctx, entry.DepIATA, entry.ArrIATA)
+		if err != nil {
+			s.log.Warn("distance lookup failed",
+				zap.String("route", entry.DepIATA+"-"+entry.ArrIATA),
+				zap.Error(err),
+			)
+		} else {
+			flight.GreatCircleDistance = *dist
+		}
 	}
 
 	return flight
+}
+
+// resolveAirport returns pre-populated CSV data when available, otherwise falls back to a provider lookup.
+func (s *Service) resolveAirport(ctx context.Context, iata, icao, name, city, country string, lat, lon float64) domain.Airport {
+	if name != "" {
+		return domain.Airport{
+			IATA:             iata,
+			ICAO:             icao,
+			Name:             name,
+			MunicipalityName: city,
+			CountryCode:      country,
+			Location:         domain.Location{Lat: lat, Lon: lon},
+		}
+	}
+
+	return s.lookupAirport(ctx, iata)
 }
 
 func (s *Service) lookupAirport(ctx context.Context, iata string) domain.Airport {

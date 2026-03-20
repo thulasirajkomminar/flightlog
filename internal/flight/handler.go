@@ -18,6 +18,7 @@ import (
 const (
 	defaultListLimit    = 100
 	maxListLimit        = 200
+	floatBitSize        = 64
 	errFlightIDRequired = "flight id is required"
 	errUnauthorized     = "unauthorized"
 	errInvalidDate      = "invalid date format, expected YYYY-MM-DD"
@@ -284,8 +285,10 @@ func csvHeader() []string {
 		"date", "flight_number", "status",
 		"airline", "airline_iata", "airline_icao",
 		"departure_iata", "departure_icao", "departure_airport", "departure_city", "departure_country",
+		"departure_lat", "departure_lon",
 		"departure_time_utc", "departure_time_local", "departure_terminal", "departure_gate",
 		"arrival_iata", "arrival_icao", "arrival_airport", "arrival_city", "arrival_country",
+		"arrival_lat", "arrival_lon",
 		"arrival_time_utc", "arrival_time_local", "arrival_terminal", "arrival_gate",
 		"aircraft_model", "aircraft_registration",
 		"distance_km",
@@ -298,15 +301,21 @@ func flightToRow(f *domain.Flight) []string {
 		f.Airline.Name, f.Airline.IATA, f.Airline.ICAO,
 		f.Departure.Airport.IATA, f.Departure.Airport.ICAO, f.Departure.Airport.Name,
 		f.Departure.Airport.MunicipalityName, f.Departure.Airport.CountryCode,
+		formatCoord(f.Departure.Airport.Location.Lat), formatCoord(f.Departure.Airport.Location.Lon),
 		formatTimePtr(f.Departure.ScheduledTime.UTC), f.Departure.ScheduledTime.Local,
 		f.Departure.Terminal, f.Departure.Gate,
 		f.Arrival.Airport.IATA, f.Arrival.Airport.ICAO, f.Arrival.Airport.Name,
 		f.Arrival.Airport.MunicipalityName, f.Arrival.Airport.CountryCode,
+		formatCoord(f.Arrival.Airport.Location.Lat), formatCoord(f.Arrival.Airport.Location.Lon),
 		formatTimePtr(f.Arrival.ScheduledTime.UTC), f.Arrival.ScheduledTime.Local,
 		f.Arrival.Terminal, f.Arrival.Gate,
 		f.Aircraft.Model, f.Aircraft.Reg,
 		fmt.Sprintf("%.2f", f.GreatCircleDistance.Km),
 	}
+}
+
+func formatCoord(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, floatBitSize)
 }
 
 func formatTimePtr(t *time.Time) string {
