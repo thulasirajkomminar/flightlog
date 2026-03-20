@@ -29,7 +29,7 @@ import { importService } from "~/services"
 
 const SOURCES: Record<string, string> = {
   flighty: "Flighty",
-  flightlog: "FlightLog",
+  flightlog: "Flighlog",
 }
 
 interface ImportDialogProps {

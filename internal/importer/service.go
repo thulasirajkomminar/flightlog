@@ -99,7 +99,7 @@ func NewService(
 	}
 
 	s.RegisterAdapter(&FlightyAdapter{})
-	s.RegisterAdapter(&FlightLogAdapter{})
+	s.RegisterAdapter(&FlightlogAdapter{})
 
 	return s
 }

@@ -17,7 +17,7 @@ type ImportEntry struct {
 	DepTime      *time.Time
 	ArrTime      *time.Time
 
-	// Optional fields populated by adapters with complete data (e.g. FlightLog export).
+	// Optional fields populated by adapters with complete data (e.g. Flightlog export).
 	DepICAO      string
 	DepName      string
 	DepCity      string

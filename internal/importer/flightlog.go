@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// ErrInvalidFlightLogCSV is returned when required columns are missing.
-var ErrInvalidFlightLogCSV = errors.New("invalid FlightLog CSV: missing required columns")
+// ErrInvalidFlightlogCSV is returned when required columns are missing.
+var ErrInvalidFlightlogCSV = errors.New("invalid Flightlog CSV: missing required columns")
 
 var flightlogRequiredColumns = []string{ //nolint:gochecknoglobals // column schema
 	"date", "flight_number", "departure_iata", "arrival_iata",
@@ -19,16 +19,16 @@ var flightlogRequiredColumns = []string{ //nolint:gochecknoglobals // column sch
 
 const floatBitSize = 64
 
-// FlightLogAdapter parses CSV exports from FlightLog itself.
-type FlightLogAdapter struct{}
+// FlightlogAdapter parses CSV exports from Flightlog itself.
+type FlightlogAdapter struct{}
 
 // Name returns "flightlog".
-func (a *FlightLogAdapter) Name() string {
+func (a *FlightlogAdapter) Name() string {
 	return "flightlog"
 }
 
-// Parse reads a FlightLog CSV and returns import entries.
-func (a *FlightLogAdapter) Parse(r io.Reader) ([]ImportEntry, error) {
+// Parse reads a Flightlog CSV and returns import entries.
+func (a *FlightlogAdapter) Parse(r io.Reader) ([]ImportEntry, error) {
 	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 
@@ -41,14 +41,14 @@ func (a *FlightLogAdapter) Parse(r io.Reader) ([]ImportEntry, error) {
 
 	for _, col := range flightlogRequiredColumns {
 		if _, ok := colIdx[col]; !ok {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidFlightLogCSV, col)
+			return nil, fmt.Errorf("%w: %s", ErrInvalidFlightlogCSV, col)
 		}
 	}
 
-	return parseFlightLogRows(reader, colIdx)
+	return parseFlightlogRows(reader, colIdx)
 }
 
-func parseFlightLogRows(reader *csv.Reader, colIdx map[string]int) ([]ImportEntry, error) {
+func parseFlightlogRows(reader *csv.Reader, colIdx map[string]int) ([]ImportEntry, error) {
 	var entries []ImportEntry
 
 	for {
@@ -61,7 +61,7 @@ func parseFlightLogRows(reader *csv.Reader, colIdx map[string]int) ([]ImportEntr
 			return nil, fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		entry, err := parseFlightLogRow(row, colIdx)
+		entry, err := parseFlightlogRow(row, colIdx)
 		if err != nil {
 			continue
 		}
@@ -72,7 +72,7 @@ func parseFlightLogRows(reader *csv.Reader, colIdx map[string]int) ([]ImportEntr
 	return entries, nil
 }
 
-func parseFlightLogRow(row []string, colIdx map[string]int) (ImportEntry, error) {
+func parseFlightlogRow(row []string, colIdx map[string]int) (ImportEntry, error) {
 	getCol := func(name string) string {
 		if idx, ok := colIdx[name]; ok && idx < len(row) {
 			return strings.TrimSpace(row[idx])
@@ -122,7 +122,7 @@ func parseFlightLogRow(row []string, colIdx map[string]int) (ImportEntry, error)
 
 	entry.DistanceKm = parseFloat(getCol("distance_km"))
 
-	setFlightLogTimes(&entry, getCol)
+	setFlightlogTimes(&entry, getCol)
 
 	return entry, nil
 }
@@ -136,7 +136,7 @@ func parseFloat(s string) float64 {
 	return km
 }
 
-func setFlightLogTimes(entry *ImportEntry, getCol func(string) string) {
+func setFlightlogTimes(entry *ImportEntry, getCol func(string) string) {
 	if depTimeStr := getCol("departure_time_utc"); depTimeStr != "" {
 		t, err := time.Parse(time.RFC3339, depTimeStr)
 		if err == nil {
