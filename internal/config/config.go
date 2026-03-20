@@ -24,7 +24,7 @@ type ServerConfig struct {
 	Port         string        `env:"PORT"          envDefault:"8080"`
 	Host         string        `env:"HOST"          envDefault:"0.0.0.0"`
 	ReadTimeout  time.Duration `env:"READ_TIMEOUT"  envDefault:"30s"`
-	WriteTimeout time.Duration `env:"WRITE_TIMEOUT" envDefault:"30s"`
+	WriteTimeout time.Duration `env:"WRITE_TIMEOUT" envDefault:"10m30s"`
 	IdleTimeout  time.Duration `env:"IDLE_TIMEOUT"  envDefault:"120s"`
 }
 

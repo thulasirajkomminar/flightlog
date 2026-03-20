@@ -45,21 +45,28 @@ type Provider interface {
 	GetProviderName() string
 }
 
+// CacheBackfiller populates lookup caches from provider flight data.
+type CacheBackfiller interface {
+	BackfillFromFlight(ctx context.Context, flight *domain.Flight)
+}
+
 // Service implements the flight service.
 type Service struct {
-	cache    CacheRepository
-	userRepo UserFlightRepository
-	provider Provider
-	log      *logger.ComponentLogger
+	cache      CacheRepository
+	userRepo   UserFlightRepository
+	provider   Provider
+	backfiller CacheBackfiller
+	log        *logger.ComponentLogger
 }
 
 // NewService creates a Service.
-func NewService(cache CacheRepository, userRepo UserFlightRepository, provider Provider) *Service {
+func NewService(cache CacheRepository, userRepo UserFlightRepository, provider Provider, backfiller CacheBackfiller) *Service {
 	return &Service{
-		cache:    cache,
-		userRepo: userRepo,
-		provider: provider,
-		log:      logger.NewComponentLogger("flight_service"),
+		cache:      cache,
+		userRepo:   userRepo,
+		provider:   provider,
+		backfiller: backfiller,
+		log:        logger.NewComponentLogger("flight_service"),
 	}
 }
 
@@ -224,6 +231,8 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 		if err != nil {
 			return nil, fmt.Errorf("cache flight %s: %w", flight.Number, err)
 		}
+
+		s.backfiller.BackfillFromFlight(ctx, flight)
 
 		result = append(result, flight)
 	}

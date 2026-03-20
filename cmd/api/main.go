@@ -16,9 +16,11 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/config"
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
+	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/provider/aerodatabox"
@@ -134,7 +136,7 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{})
+	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{}, &airport.DistanceRecord{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to run database migration: %w", err)
 	}
@@ -153,12 +155,18 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 		return nil, fmt.Errorf("failed to create AeroDataBox provider: %w", err)
 	}
 
-	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider)
+	airportStore := airport.NewStore(db)
+	cachedLookup := airport.NewCachedLookup(airportStore, aeroProvider)
+
+	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup)
 	flightHandler := flight.NewHandler(flightService)
 	providers := map[string]provider.FlightProvider{
 		aeroProvider.GetProviderName(): aeroProvider,
 	}
 	providerHandler := provider.NewHandler(providers)
+
+	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup)
+	importHandler := importer.NewHandler(importService)
 
 	userStore := user.NewStore(db)
 	userService := user.NewService(userStore)
@@ -166,6 +174,7 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 
 	deps := &server.Dependencies{
 		FlightHandler:         flightHandler,
+		ImportHandler:         importHandler,
 		ProviderHandler:       providerHandler,
 		UserHandler:           userHandler,
 		JWTSecret:             cfg.Auth.JWTSecret,

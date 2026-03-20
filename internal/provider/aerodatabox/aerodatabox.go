@@ -24,7 +24,42 @@ var (
 	ErrTimeParseFailure = errors.New("cannot parse time")
 )
 
-const maxResponseSize = 10 << 20 // 10 MB
+const (
+	maxResponseSize  = 10 << 20 // 10 MB
+	maxRetries       = 3
+	retryBackoffBase = 2 * time.Second
+)
+
+// retryTransport wraps an http.RoundTripper and retries on 429 with exponential backoff.
+type retryTransport struct {
+	base http.RoundTripper
+}
+
+func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for attempt := range maxRetries + 1 {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			return nil, fmt.Errorf("round trip: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxRetries {
+			return resp, nil
+		}
+
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+
+		backoff := time.Duration(attempt+1) * retryBackoffBase
+
+		select {
+		case <-req.Context().Done():
+			return nil, fmt.Errorf("retry cancelled: %w", req.Context().Err())
+		case <-time.After(backoff):
+		}
+	}
+
+	return nil, fmt.Errorf("%w: 429 after %d retries", ErrUnexpectedStatus, maxRetries)
+}
 
 // Provider implements flight.Provider.
 type Provider struct {
@@ -38,8 +73,13 @@ func NewProvider(apiKey, baseURL string, timeout time.Duration) (*Provider, erro
 		baseURL = "https://aerodatabox.p.rapidapi.com"
 	}
 
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: &retryTransport{base: http.DefaultTransport},
+	}
+
 	client, err := api.NewClient(baseURL,
-		api.WithHTTPClient(&http.Client{Timeout: timeout}),
+		api.WithHTTPClient(httpClient),
 		api.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 			req.Header.Set("X-Rapidapi-Key", apiKey)
 			req.Header.Set("X-Rapidapi-Host", "aerodatabox.p.rapidapi.com")
@@ -99,40 +139,6 @@ func (p *Provider) SearchFlights(ctx context.Context, criteria map[string]string
 	}
 
 	return parseFlightResults(body, dateStr)
-}
-
-func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, date time.Time) ([]byte, error) {
-	resp, err := p.client.GetFlightFlightOnSpecificDate(ctx,
-		api.FlightSearchByEnumNumber,
-		flightNumber,
-		date,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("aerodatabox API request failed: %w", err)
-	}
-
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		p.log.Warn("unexpected API status",
-			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(body)),
-		)
-
-		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
-	}
-
-	return body, nil
 }
 
 func parseFlightResults(body []byte, dateStr string) ([]*domain.Flight, error) {
@@ -388,4 +394,127 @@ func convertStatus(status api.FlightStatus) domain.FlightStatus {
 	}
 
 	return domain.FlightStatusScheduled
+}
+
+// GetAirportByIATA retrieves airport info by IATA code.
+func (p *Provider) GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error) {
+	resp, err := p.client.GetAirport(ctx, api.Iata, iata, nil)
+	if err != nil {
+		return nil, fmt.Errorf("airport lookup failed for %s: %w", iata, err)
+	}
+
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d for airport %s", ErrUnexpectedStatus, resp.StatusCode, iata)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read airport response: %w", err)
+	}
+
+	var ac api.AirportContract
+
+	err = json.Unmarshal(body, &ac)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode airport response: %w", err)
+	}
+
+	airport := &domain.Airport{
+		Name:        ac.FullName,
+		Location:    domain.Location{Lat: float64(ac.Location.Lat), Lon: float64(ac.Location.Lon)},
+		CountryCode: ac.Country.Code,
+		TimeZone:    ac.TimeZone,
+	}
+
+	setOptionalAirportFields(airport, &ac)
+
+	return airport, nil
+}
+
+func setOptionalAirportFields(airport *domain.Airport, ac *api.AirportContract) {
+	if ac.Iata != nil {
+		airport.IATA = *ac.Iata
+	}
+
+	if ac.Icao != nil {
+		airport.ICAO = *ac.Icao
+	}
+
+	if ac.ShortName != nil {
+		airport.ShortName = *ac.ShortName
+	}
+
+	if ac.MunicipalityName != nil {
+		airport.MunicipalityName = *ac.MunicipalityName
+	}
+}
+
+// GetDistanceBetweenAirports retrieves great circle distance between two airports by IATA code.
+func (p *Provider) GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error) {
+	resp, err := p.client.GetAirportDistanceTime(ctx, api.Iata, fromIATA, toIATA, nil)
+	if err != nil {
+		return nil, fmt.Errorf("distance lookup failed for %s-%s: %w", fromIATA, toIATA, err)
+	}
+
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d for distance %s-%s", ErrUnexpectedStatus, resp.StatusCode, fromIATA, toIATA)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read distance response: %w", err)
+	}
+
+	var dt api.AirportDistanceTimeContract
+
+	err = json.Unmarshal(body, &dt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode distance response: %w", err)
+	}
+
+	return &domain.GreatCircleDistance{
+		Meter: dt.GreatCircleDistance.Meter,
+		Km:    dt.GreatCircleDistance.Km,
+		Mile:  dt.GreatCircleDistance.Mile,
+		Nm:    dt.GreatCircleDistance.Nm,
+		Feet:  dt.GreatCircleDistance.Feet,
+	}, nil
+}
+
+func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, date time.Time) ([]byte, error) {
+	resp, err := p.client.GetFlightFlightOnSpecificDate(ctx,
+		api.FlightSearchByEnumNumber,
+		flightNumber,
+		date,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("aerodatabox API request failed: %w", err)
+	}
+
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		p.log.Warn("unexpected API status",
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", string(body)),
+		)
+
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
+	}
+
+	return body, nil
 }

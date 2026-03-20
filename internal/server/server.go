@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
+	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/user"
@@ -20,11 +21,13 @@ import (
 const (
 	compressLevel  = 5
 	requestTimeout = 30 * time.Second
+	importTimeout  = 10 * time.Minute
 )
 
 // Dependencies holds router dependencies.
 type Dependencies struct {
 	FlightHandler   *flight.Handler
+	ImportHandler   *importer.Handler
 	ProviderHandler *provider.Handler
 	UserHandler     *user.Handler
 
@@ -46,7 +49,6 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(SecurityHeaders(deps.ScriptHashes))
 	r.Use(chimiddleware.Compress(compressLevel))
-	r.Use(chimiddleware.Timeout(requestTimeout))
 	r.Use(RateLimitByIP(deps.IPRequestsPerMinute, 1*time.Minute))
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -64,26 +66,42 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public routes
-		r.Post("/auth/register", deps.UserHandler.Register)
-		r.Post("/auth/login", deps.UserHandler.Login)
+		r.Group(func(r chi.Router) {
+			r.Use(chimiddleware.Timeout(requestTimeout))
+			r.Post("/auth/register", deps.UserHandler.Register)
+			r.Post("/auth/login", deps.UserHandler.Login)
+		})
 
 		// Authenticated routes
 		r.Group(func(r chi.Router) {
 			r.Use(Auth(deps.JWTSecret))
 			r.Use(RateLimitByUser(deps.UserRequestsPerMinute, 1*time.Minute))
 
-			r.Get("/auth/me", deps.UserHandler.GetProfile)
-			r.Put("/auth/me", deps.UserHandler.UpdateProfile)
-			r.Post("/auth/logout", deps.UserHandler.Logout)
+			r.Group(func(r chi.Router) {
+				r.Use(chimiddleware.Timeout(requestTimeout))
 
-			r.Get("/providers/{provider}/flights/search", deps.ProviderHandler.SearchFlights)
-			r.Get("/flights/search", deps.FlightHandler.SearchFlights)
-			r.Get("/flights/stats", deps.FlightHandler.GetStats)
-			r.Get("/flights", deps.FlightHandler.ListFlights)
-			r.Get("/flights/export", deps.FlightHandler.ExportFlights)
-			r.Get("/flights/{id}", deps.FlightHandler.GetFlight)
-			r.Post("/flights/{id}/add", deps.FlightHandler.AddFlight)
-			r.Delete("/flights/{id}", deps.FlightHandler.DeleteFlight)
+				r.Get("/auth/me", deps.UserHandler.GetProfile)
+				r.Put("/auth/me", deps.UserHandler.UpdateProfile)
+				r.Post("/auth/logout", deps.UserHandler.Logout)
+
+				r.Get("/providers/{provider}/flights/search", deps.ProviderHandler.SearchFlights)
+				r.Get("/flights/search", deps.FlightHandler.SearchFlights)
+				r.Get("/flights/stats", deps.FlightHandler.GetStats)
+				r.Get("/flights", deps.FlightHandler.ListFlights)
+				r.Get("/flights/export", deps.FlightHandler.ExportFlights)
+				r.Get("/flights/{id}", deps.FlightHandler.GetFlight)
+				r.Post("/flights/{id}/add", deps.FlightHandler.AddFlight)
+				r.Delete("/flights/{id}", deps.FlightHandler.DeleteFlight)
+
+				r.Get("/import/sources", deps.ImportHandler.Sources)
+				r.Post("/import/preview", deps.ImportHandler.Preview)
+			})
+
+			// Import has its own timeout — not nested under the 30s group.
+			r.Group(func(r chi.Router) {
+				r.Use(chimiddleware.Timeout(importTimeout))
+				r.Post("/import", deps.ImportHandler.Import)
+			})
 		})
 	})
 
