@@ -14,11 +14,23 @@ import {
 } from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select"
 import { Switch } from "~/components/ui/switch"
 
 import type { ImportPreview } from "~/types"
 
 import { importService } from "~/services"
+
+const SOURCES: Record<string, string> = {
+  flighty: "Flighty",
+  flightlog: "FlightLog",
+}
 
 interface ImportDialogProps {
   onImported: () => void
@@ -26,14 +38,13 @@ interface ImportDialogProps {
 
 export function ImportDialog({ onImported }: ImportDialogProps) {
   const [open, setOpen] = useState(false)
+  const [source, setSource] = useState<string>("")
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [enrich, setEnrich] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const source = "flighty"
 
   function clearFile() {
     setFile(null)
@@ -45,6 +56,7 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
 
   function reset() {
     clearFile()
+    setSource("")
     setEnrich(true)
     setIsLoading(false)
     setIsImporting(false)
@@ -81,7 +93,12 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
     setIsImporting(true)
 
     try {
-      const result = await importService.importFlights(source, file, enrich)
+      const shouldEnrich = source !== "flightlog" && enrich
+      const result = await importService.importFlights(
+        source,
+        file,
+        shouldEnrich
+      )
 
       const parts = []
       if (result.imported > 0) parts.push(`${result.imported} imported`)
@@ -130,6 +147,29 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
+            <Label>Source</Label>
+            <Select
+              value={source}
+              onValueChange={(v) => {
+                setSource(v)
+                clearFile()
+              }}
+              disabled={isLoading || isImporting}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select source" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(SOURCES).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label htmlFor="import-file">CSV file</Label>
             <Input
               id="import-file"
@@ -138,7 +178,7 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
               accept=".csv"
               className={`file:mr-3 file:font-medium file:text-foreground ${!file ? "text-muted-foreground" : ""}`}
               onChange={handleFileChange}
-              disabled={isLoading || isImporting}
+              disabled={!source || isLoading || isImporting}
             />
           </div>
 
@@ -157,7 +197,7 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
                 </div>
               </div>
 
-              {preview.enrichable > 0 && (
+              {source !== "flightlog" && preview.enrichable > 0 && (
                 <div className="flex items-center justify-between gap-3">
                   <Label
                     htmlFor="enrich-toggle"
