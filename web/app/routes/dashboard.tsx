@@ -21,9 +21,24 @@ import { useDashboardData } from "~/hooks/use-dashboard-data"
 const FlightMap = lazy(() => import("~/components/flight-map"))
 
 function formatDuration(hours: number): string {
-  const h = Math.floor(hours)
-  const m = Math.round((hours - h) * 60)
-  return `${h}h ${m}m`
+  const totalMinutes = Math.round(hours * 60)
+  const m = totalMinutes % 60
+  const totalHours = Math.floor(totalMinutes / 60)
+  const h = totalHours % 24
+  const totalDays = Math.floor(totalHours / 24)
+  const d = totalDays % 30
+  const totalMonths = Math.floor(totalDays / 30)
+  const mo = totalMonths % 12
+  const y = Math.floor(totalMonths / 12)
+
+  const parts: string[] = []
+  if (y > 0) parts.push(`${y}y`)
+  if (mo > 0) parts.push(`${mo}mo`)
+  if (d > 0) parts.push(`${d}d`)
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+
+  return parts.join(" ") || "0m"
 }
 
 export default function DashboardPage() {
