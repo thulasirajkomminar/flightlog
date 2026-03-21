@@ -154,16 +154,18 @@ func (s *Service) Parse(source string, r io.Reader) ([]ImportEntry, error) {
 
 type importOptions struct {
 	userID string
+	source string
 	enrich bool
 	cutoff string
 }
 
 // Import processes parsed entries: deduplicates, optionally enriches from the provider, and links to the user.
-func (s *Service) Import(ctx context.Context, userID string, entries []ImportEntry, enrich bool) *ImportResult {
+func (s *Service) Import(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) *ImportResult {
 	result := &ImportResult{Total: len(entries)}
 
 	opts := importOptions{
 		userID: userID,
+		source: source,
 		enrich: enrich,
 		cutoff: time.Now().AddDate(0, 0, -providerDaysLimit).Format("2006-01-02"),
 	}
@@ -214,7 +216,7 @@ func (s *Service) importEntry(
 		}
 	}
 
-	flight := s.createFromImport(ctx, entry)
+	flight := s.createFromImport(ctx, entry, opts.source)
 
 	err := s.cacher.Create(ctx, flight)
 	if err != nil {
@@ -285,12 +287,18 @@ func (s *Service) enrichFromProvider(ctx context.Context, entry *ImportEntry) (*
 func (s *Service) createFromImport(
 	ctx context.Context,
 	entry *ImportEntry,
+	source string,
 ) *domain.Flight {
+	status := domain.FlightStatus(entry.Status)
+	if !domain.ValidFlightStatus(status) {
+		status = domain.FlightStatusLanded
+	}
+
 	flight := &domain.Flight{
 		Number:     entry.FlightNumber,
 		FlightDate: entry.Date,
-		Status:     domain.FlightStatusLanded,
-		Provider:   "import",
+		Status:     status,
+		Provider:   source,
 		Airline: domain.FlightAirline{
 			Name: entry.AirlineName,
 			IATA: entry.Airline,
@@ -320,7 +328,7 @@ func (s *Service) createFromImport(
 	}
 
 	if entry.DistanceKm > 0 {
-		flight.GreatCircleDistance = domain.GreatCircleDistance{Km: entry.DistanceKm}
+		flight.GreatCircleDistance = distanceFromKm(entry.DistanceKm)
 	} else {
 		dist, err := s.airports.GetDistanceBetweenAirports(ctx, entry.DepIATA, entry.ArrIATA)
 		if err != nil {
@@ -373,4 +381,21 @@ func (s *Service) linkFlight(ctx context.Context, userID, flightID string) error
 	}
 
 	return nil
+}
+
+const (
+	metersPerKm   = 1000
+	milesPerKm    = 0.621371
+	nauticalPerKm = 0.539957
+	feetPerKm     = 3280.84
+)
+
+func distanceFromKm(km float64) domain.GreatCircleDistance {
+	return domain.GreatCircleDistance{
+		Km:    km,
+		Meter: km * metersPerKm,
+		Mile:  km * milesPerKm,
+		Nm:    km * nauticalPerKm,
+		Feet:  km * feetPerKm,
+	}
 }

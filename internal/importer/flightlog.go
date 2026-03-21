@@ -97,6 +97,7 @@ func parseFlightlogRow(row []string, colIdx map[string]int) (ImportEntry, error)
 		ArrIATA:      arrIATA,
 		Airline:      getCol("airline_iata"),
 		Aircraft:     getCol("aircraft_model"),
+		Status:       getCol("status"),
 		AirlineName:  getCol("airline"),
 		AirlineICAO:  getCol("airline_icao"),
 		DepICAO:      getCol("departure_icao"),

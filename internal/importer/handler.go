@@ -52,7 +52,9 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	// even if the client disconnects or chi's timeout middleware fires.
 	importCtx := context.WithoutCancel(r.Context())
 
-	result := h.service.Import(importCtx, user.UserID, entries, enrich)
+	source := r.URL.Query().Get("source")
+
+	result := h.service.Import(importCtx, user.UserID, entries, source, enrich)
 
 	api.RespondJSON(w, http.StatusOK, result)
 }

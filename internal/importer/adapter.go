@@ -14,6 +14,7 @@ type ImportEntry struct {
 	ArrIATA      string
 	Airline      string
 	Aircraft     string
+	Status       string
 	DepTime      *time.Time
 	ArrTime      *time.Time
 

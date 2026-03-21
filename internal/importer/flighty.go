@@ -146,6 +146,11 @@ func buildFlightyEntry(getCol func(string) string) (ImportEntry, error) {
 		ArrIATA:      strings.ToUpper(to),
 		Airline:      strings.ToUpper(airline),
 		Aircraft:     getCol("Aircraft Type Name"),
+		AircraftReg:  getCol("Tail Number"),
+		DepTerminal:  getCol("Dep Terminal"),
+		DepGate:      getCol("Dep Gate"),
+		ArrTerminal:  getCol("Arr Terminal"),
+		ArrGate:      getCol("Arr Gate"),
 	}, nil
 }
 

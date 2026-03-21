@@ -111,3 +111,29 @@ networks:
 ```bash
 docker compose up -d
 ```
+
+## Import & Export
+
+### Export
+
+Head to **My Flights** and hit the **Export** button — you'll get a CSV file (`flightlog-export.csv`) with everything: flight details, airline info, airport data (with coordinates), times, terminals, gates, aircraft, distance. 29 columns in total.
+
+### Import
+
+From **My Flights**, click **Import** to open the import dialog:
+
+1. **Select source** — pick your CSV format from the dropdown
+2. **Upload CSV** — choose your file (up to 5 MB, 100 flights per import)
+3. **Preview** — the dialog will tell you how many flights it found
+4. **Enrich** *(Flighty only)* — optionally pull in extra detail (gates, aircraft, actual times) for recent flights (within the last year) via AeroDataBox
+5. **Import** — you're done
+
+#### Supported Sources
+
+| Source | Description | API Calls |
+| --- | --- | --- |
+| **Flighty** | Import from a [Flighty](https://www.flightyapp.com) CSV export. These only include the basics (date, airline, flight number, airports), so enrichment is available to fill in the gaps. | Airport lookups + optional enrichment via AeroDataBox |
+| **Flightlog** | Re-import your own Flightlog export. All fields come straight from the CSV — no lookups needed. | None |
+
+> [!TIP]
+> A handy way to migrate to a new instance: export your flights, then re-import. No API calls required.
