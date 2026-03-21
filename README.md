@@ -47,9 +47,8 @@ Copy `.env.example` to `.env` and set the required values.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ENVIRONMENT` | `development` | Set to `production` in prod |
+| `ENVIRONMENT` | `production` | Set to `development` for debug info |
 | `SERVER_PORT` | `8080` | HTTP port |
-| `DATABASE_PATH` | `data/flightlog.db` | SQLite database path |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 ### Deployment

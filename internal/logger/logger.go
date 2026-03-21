@@ -3,7 +3,6 @@ package logger
 
 import (
 	"fmt"
-	"os"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -19,9 +18,9 @@ var globalLogger *zap.Logger //nolint:gochecknoglobals // singleton logger patte
 
 // Config holds logger configuration.
 type Config struct {
-	Level       string // debug, info, warn, error.
-	Environment string // development, production.
-	Format      string // json, console.
+	Level       string
+	Environment string
+	Format      string
 }
 
 // Init initialises the global logger.
@@ -133,36 +132,4 @@ func (l *ComponentLogger) Debug(msg string, fields ...zap.Field) {
 // Warn logs a warning message.
 func (l *ComponentLogger) Warn(msg string, fields ...zap.Field) {
 	l.logger.Warn(msg, fields...)
-}
-
-// DefaultConfig returns logger Config based on environment variables.
-func DefaultConfig() Config {
-	env := os.Getenv("ENVIRONMENT")
-	if env == "" {
-		env = "development"
-	}
-
-	logLevel := os.Getenv("LOG_LEVEL")
-	if logLevel == "" {
-		if env == envProduction {
-			logLevel = "info"
-		} else {
-			logLevel = "debug"
-		}
-	}
-
-	logFormat := os.Getenv("LOG_FORMAT")
-	if logFormat == "" {
-		if env == envProduction {
-			logFormat = fmtJSON
-		} else {
-			logFormat = fmtConsole
-		}
-	}
-
-	return Config{
-		Level:       logLevel,
-		Environment: env,
-		Format:      logFormat,
-	}
 }

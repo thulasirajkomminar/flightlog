@@ -10,7 +10,9 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	Environment string            `env:"ENVIRONMENT"        envDefault:"development"`
+	Environment string            `env:"ENVIRONMENT"        envDefault:"production"`
+	LogLevel    string            `env:"LOG_LEVEL"`
+	LogFormat   string            `env:"LOG_FORMAT"`
 	Server      ServerConfig      `envPrefix:"SERVER_"`
 	Database    DatabaseConfig    `envPrefix:"DATABASE_"`
 	AeroDataBox AeroDataBoxConfig `envPrefix:"AERODATABOX_"`
@@ -48,5 +50,25 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
+	applyLogDefaults(cfg)
+
 	return cfg, nil
+}
+
+func applyLogDefaults(cfg *Config) {
+	if cfg.LogLevel == "" {
+		if cfg.Environment == "production" {
+			cfg.LogLevel = "info"
+		} else {
+			cfg.LogLevel = "debug"
+		}
+	}
+
+	if cfg.LogFormat == "" {
+		if cfg.Environment == "production" {
+			cfg.LogFormat = "json"
+		} else {
+			cfg.LogFormat = "console"
+		}
+	}
 }

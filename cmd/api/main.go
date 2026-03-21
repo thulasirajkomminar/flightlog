@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/config"
@@ -74,10 +75,11 @@ func main() {
 }
 
 func initLogger(cfg *config.Config) (*logger.ComponentLogger, error) {
-	logConfig := logger.DefaultConfig()
-	logConfig.Environment = cfg.Environment
-
-	err := logger.Init(logConfig)
+	err := logger.Init(logger.Config{
+		Level:       cfg.LogLevel,
+		Format:      cfg.LogFormat,
+		Environment: cfg.Environment,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialise logger: %w", err)
 	}
@@ -134,7 +136,11 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open(cfg.Database.Path+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(cfg.Database.Path+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{
+		Logger: gormlogger.New(log.New(os.Stderr, "", log.LstdFlags), gormlogger.Config{
+			IgnoreRecordNotFoundError: true,
+		}),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

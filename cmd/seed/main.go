@@ -10,30 +10,31 @@ import (
 	"github.com/joho/godotenv"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 	"github.com/thulasirajkomminar/flightlog/internal/seed"
 )
 
-const dataDirPerm = 0o750
+const (
+	dataDirPerm   = 0o750
+	defaultDBPath = "data/flightlog.db"
+)
 
 func main() {
 	_ = godotenv.Load()
+
+	if os.Getenv("ENVIRONMENT") != "development" {
+		log.Fatal("seed is only allowed in development (set ENVIRONMENT=development)")
+	}
 
 	mode := "seed"
 	if len(os.Args) > 1 {
 		mode = os.Args[1]
 	}
 
-	dbPath := os.Getenv("DATABASE_PATH")
-	if dbPath == "" {
-		dbPath = "data/flightlog.db"
-	}
-
-	dbPath = filepath.Clean(dbPath)
-
-	db, err := openDB(dbPath)
+	db, err := openDB(defaultDBPath)
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}
@@ -56,7 +57,11 @@ func openDB(dbPath string) (*gorm.DB, error) {
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{
+		Logger: gormlogger.New(log.New(os.Stderr, "", log.LstdFlags), gormlogger.Config{
+			IgnoreRecordNotFoundError: true,
+		}),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
