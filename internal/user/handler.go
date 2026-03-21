@@ -44,19 +44,19 @@ type UpdateProfileRequest struct {
 	Name  string `json:"name"  example:"Thulasiraj Komminar"`
 }
 
+const defaultTokenExpiry = 24 * time.Hour
+
 // Handler handles auth and profile HTTP endpoints.
 type Handler struct {
 	userService *Service
 	jwtSecret   []byte
-	tokenExpiry time.Duration
 }
 
 // NewHandler creates a Handler.
-func NewHandler(userService *Service, jwtSecret string, tokenExpiry time.Duration) *Handler {
+func NewHandler(userService *Service, jwtSecret string) *Handler {
 	return &Handler{
 		userService: userService,
 		jwtSecret:   []byte(jwtSecret),
-		tokenExpiry: tokenExpiry,
 	}
 }
 
@@ -87,7 +87,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, h.tokenExpiry)
+	setAuthCookie(w, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusCreated, AuthResponse{
 		Token: token,
@@ -128,7 +128,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, h.tokenExpiry)
+	setAuthCookie(w, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
@@ -229,7 +229,7 @@ func (h *Handler) generateToken(user *domain.User) (string, error) {
 
 	claims := &api.UserClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(h.tokenExpiry)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(defaultTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Subject:   user.ID,
 		},

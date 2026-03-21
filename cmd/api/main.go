@@ -30,8 +30,11 @@ import (
 )
 
 const (
-	shutdownTimeout = 10 * time.Second
-	dataDirPerm     = 0o750
+	shutdownTimeout    = 10 * time.Second
+	dataDirPerm        = 0o750
+	serverReadTimeout  = 30 * time.Second
+	serverWriteTimeout = 10*time.Minute + 30*time.Second
+	serverIdleTimeout  = 120 * time.Second
 )
 
 // version is set at build time via ldflags.
@@ -150,7 +153,7 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 	flightCacheStore := flight.NewCacheStore(db)
 	userFlightStore := flight.NewUserFlightStore(db)
 
-	aeroProvider, err := aerodatabox.NewProvider(cfg.AeroDataBox.APIKey, cfg.AeroDataBox.BaseURL, cfg.AeroDataBox.Timeout)
+	aeroProvider, err := aerodatabox.NewProvider(cfg.AeroDataBox.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AeroDataBox provider: %w", err)
 	}
@@ -170,27 +173,25 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 
 	userStore := user.NewStore(db)
 	userService := user.NewService(userStore)
-	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry)
+	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret)
 
 	deps := &server.Dependencies{
-		FlightHandler:         flightHandler,
-		ImportHandler:         importHandler,
-		ProviderHandler:       providerHandler,
-		UserHandler:           userHandler,
-		JWTSecret:             cfg.Auth.JWTSecret,
-		Version:               version,
-		WebFS:                 web.Frontend(),
-		ScriptHashes:          web.InlineScriptHashes(),
-		IPRequestsPerMinute:   cfg.RateLimit.IPRequestsPerMinute,
-		UserRequestsPerMinute: cfg.RateLimit.UserRequestsPerMinute,
+		FlightHandler:   flightHandler,
+		ImportHandler:   importHandler,
+		ProviderHandler: providerHandler,
+		UserHandler:     userHandler,
+		JWTSecret:       cfg.Auth.JWTSecret,
+		Version:         version,
+		WebFS:           web.Frontend(),
+		ScriptHashes:    web.InlineScriptHashes(),
 	}
 	r := server.SetupRouter(deps)
 
 	return &http.Server{
-		Addr:         cfg.Server.Host + ":" + cfg.Server.Port,
+		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
+		ReadTimeout:  serverReadTimeout,
+		WriteTimeout: serverWriteTimeout,
+		IdleTimeout:  serverIdleTimeout,
 	}, nil
 }

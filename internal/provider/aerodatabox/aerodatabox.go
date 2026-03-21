@@ -67,18 +67,19 @@ type Provider struct {
 	log    *logger.ComponentLogger
 }
 
-// NewProvider creates a Provider.
-func NewProvider(apiKey, baseURL string, timeout time.Duration) (*Provider, error) {
-	if baseURL == "" {
-		baseURL = "https://aerodatabox.p.rapidapi.com"
-	}
+const (
+	defaultBaseURL = "https://aerodatabox.p.rapidapi.com"
+	defaultTimeout = 30 * time.Second
+)
 
+// NewProvider creates a Provider.
+func NewProvider(apiKey string) (*Provider, error) {
 	httpClient := &http.Client{
-		Timeout:   timeout,
+		Timeout:   defaultTimeout,
 		Transport: &retryTransport{base: http.DefaultTransport},
 	}
 
-	client, err := api.NewClient(baseURL,
+	client, err := api.NewClient(defaultBaseURL,
 		api.WithHTTPClient(httpClient),
 		api.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 			req.Header.Set("X-Rapidapi-Key", apiKey)

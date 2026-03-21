@@ -50,11 +50,6 @@ Copy `.env.example` to `.env` and set the required values.
 | `ENVIRONMENT` | `development` | Set to `production` in prod |
 | `SERVER_PORT` | `8080` | HTTP port |
 | `DATABASE_PATH` | `data/flightlog.db` | SQLite database path |
-| `AUTH_TOKEN_EXPIRY` | `24h` | JWT token lifetime |
-| `RATE_LIMIT_IP_REQUESTS_PER_MINUTE` | `100` | Per-IP rate limit |
-| `RATE_LIMIT_USER_REQUESTS_PER_MINUTE` | `200` | Per-user rate limit |
-| `AERODATABOX_BASE_URL` | `https://aerodatabox.p.rapidapi.com` | API base URL |
-| `AERODATABOX_TIMEOUT` | `30s` | API request timeout |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 ### Deployment

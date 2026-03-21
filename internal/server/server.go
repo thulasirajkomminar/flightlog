@@ -24,6 +24,11 @@ const (
 	importTimeout  = 10 * time.Minute
 )
 
+const (
+	ipRequestsPerMinute   = 100
+	userRequestsPerMinute = 200
+)
+
 // Dependencies holds router dependencies.
 type Dependencies struct {
 	FlightHandler   *flight.Handler
@@ -31,12 +36,10 @@ type Dependencies struct {
 	ProviderHandler *provider.Handler
 	UserHandler     *user.Handler
 
-	JWTSecret             string
-	Version               string
-	WebFS                 fs.FS
-	ScriptHashes          []string
-	IPRequestsPerMinute   int
-	UserRequestsPerMinute int
+	JWTSecret    string
+	Version      string
+	WebFS        fs.FS
+	ScriptHashes []string
 }
 
 // SetupRouter creates and configures the chi router.
@@ -49,7 +52,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(SecurityHeaders(deps.ScriptHashes))
 	r.Use(chimiddleware.Compress(compressLevel))
-	r.Use(RateLimitByIP(deps.IPRequestsPerMinute, 1*time.Minute))
+	r.Use(RateLimitByIP(ipRequestsPerMinute, 1*time.Minute))
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -75,7 +78,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 		// Authenticated routes
 		r.Group(func(r chi.Router) {
 			r.Use(Auth(deps.JWTSecret))
-			r.Use(RateLimitByUser(deps.UserRequestsPerMinute, 1*time.Minute))
+			r.Use(RateLimitByUser(userRequestsPerMinute, 1*time.Minute))
 
 			r.Group(func(r chi.Router) {
 				r.Use(chimiddleware.Timeout(requestTimeout))
