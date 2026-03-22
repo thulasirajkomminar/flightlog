@@ -11,7 +11,7 @@ linters:
     - varnamelen
   settings:
     tagalign:
-      order: 
+      order:
         - json
         - yaml
         - yml
