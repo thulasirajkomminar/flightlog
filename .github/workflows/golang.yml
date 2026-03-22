@@ -25,6 +25,8 @@ jobs:
       TASK_X_REMOTE_TASKFILES: 1
     steps:
       - uses: actions/checkout@v6.0.2
+      - name: Create embed placeholder
+        run: mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
       - uses: schubergphilis/mcvs-golang-action@v3.11.5
         with:
           build-tags: ${{ matrix.args.build-tags }}
