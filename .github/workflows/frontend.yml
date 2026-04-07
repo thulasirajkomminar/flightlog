@@ -1,4 +1,5 @@
 name: Frontend CI
+
 permissions:
   contents: read
 
