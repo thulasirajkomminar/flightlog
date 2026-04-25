@@ -1,41 +1,81 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "timezone": "Europe/Amsterdam",
-  "schedule": ["before 9am every day"],
-  "labels": ["dependencies"],
+  "schedule": [
+    "before 9am every day"
+  ],
+  "labels": [
+    "dependencies"
+  ],
   "prConcurrentLimit": 5,
   "separateMajorMinor": true,
-  "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
-    "labels": ["dependencies", "security"],
-    "schedule": "at any time",
+    "labels": [
+      "dependencies",
+      "security"
+    ],
     "prPriority": 5
   },
   "packageRules": [
     {
-      "matchManagers": ["npm"],
-      "matchFileNames": ["web/package.json"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "web/package.json"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "frontend",
-      "labels": ["dependencies", "frontend"]
+      "labels": [
+        "dependencies",
+        "frontend"
+      ]
     },
     {
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["go.mod"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "go.mod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "backend",
-      "labels": ["dependencies", "backend"]
+      "labels": [
+        "dependencies",
+        "backend"
+      ]
     },
     {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "github-actions",
-      "labels": ["dependencies", "github-actions"]
+      "labels": [
+        "dependencies",
+        "github-actions"
+      ]
     },
     {
-      "matchUpdateTypes": ["major"],
-      "labels": ["dependencies", "major-update"]
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "labels": [
+        "dependencies",
+        "major-update"
+      ]
     }
   ]
 }
