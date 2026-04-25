@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":rebaseStalePrs"
   ],
   "timezone": "Europe/Amsterdam",
   "schedule": [
@@ -10,15 +11,38 @@
   "labels": [
     "dependencies"
   ],
+  "automerge": false,
   "prConcurrentLimit": 5,
-  "separateMajorMinor": true,
+  "prHourlyLimit": 3,
+  "rebaseWhen": "behind-base-branch",
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
+  "ignorePaths": [
+    "**/vendor/**"
+  ],
   "vulnerabilityAlerts": {
+    "enabled": true,
     "labels": [
       "dependencies",
       "security"
-    ],
-    "prPriority": 5
+    ]
   },
+  "customManagers": [
+    {
+      "description": "Go version in CI workflows",
+      "customType": "regex",
+      "fileMatch": [
+        "^\\.github/workflows/.*\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "go-version[:\\s]+['\"]?(?<currentValue>[\\d\\.]+)['\"]?"
+      ],
+      "depNameTemplate": "golang",
+      "datasourceTemplate": "golang-version"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": [
