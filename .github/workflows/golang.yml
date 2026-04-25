@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: Create embed placeholder
         run: mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
-      - uses: schubergphilis/mcvs-golang-action@v3.11.5
+      - uses: schubergphilis/mcvs-golang-action@v3.11.11
         with:
           build-tags: ${{ matrix.args.build-tags }}
           code-coverage-opa-expected: 100.00
