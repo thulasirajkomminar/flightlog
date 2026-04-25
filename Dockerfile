@@ -1,5 +1,5 @@
 # Build frontend
-FROM node:25.8.1-alpine AS frontend-builder
+FROM node:25.9.0-alpine AS frontend-builder
 
 RUN npm install -g pnpm
 
