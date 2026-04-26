@@ -65,7 +65,7 @@ export interface Movement {
   baggageBelt?: string
 }
 
-export interface TimeInfo {
+interface TimeInfo {
   utc?: string
   local?: string
 }
