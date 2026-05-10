@@ -1,0 +1,109 @@
+site_name: Flightlog
+site_description: Personal flight logbook — log, visualise, and manage your flight history.
+site_author: Thulasiraj Komminar
+site_url: https://flightlog.komminar.dev
+repo_url: https://github.com/thulasirajkomminar/flightlog
+repo_name: thulasirajkomminar/flightlog
+edit_uri: edit/main/docs/content/
+copyright: Copyright © Thulasiraj Komminar
+
+docs_dir: content
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  font:
+    text: JetBrains Mono
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/thulasirajkomminar/flightlog
+    - icon: fontawesome/brands/docker
+      link: https://github.com/thulasirajkomminar/flightlog/pkgs/container/flightlog
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - getting-started/index.md
+      - API key: getting-started/api-key.md
+      - Configuration: getting-started/configuration.md
+      - Deployment: getting-started/deployment.md
+  - Using Flightlog:
+      - usage/index.md
+      - Accounts & sign-in: usage/accounts.md
+      - Dashboard: usage/dashboard.md
+      - Search & add flights: usage/search-and-add.md
+      - My flights: usage/my-flights.md
+      - Import & export: usage/import-export.md

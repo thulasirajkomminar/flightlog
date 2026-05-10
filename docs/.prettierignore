@@ -1,0 +1,8 @@
+site/
+.venv/
+node_modules/
+uv.lock
+# Markdown files are formatted by mkdocs-material conventions, not Prettier —
+# Prettier's markdown handler doesn't understand admonition indentation and
+# silently breaks pages. We lint Markdown via markdownlint instead.
+content/**/*.md
