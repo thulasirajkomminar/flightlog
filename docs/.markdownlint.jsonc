@@ -1,0 +1,34 @@
+{
+  // Tuned to coexist with mkdocs-material extensions (admonitions, grid cards,
+  // tabbed blocks, attribute lists) without fighting their syntax.
+  "default": true,
+
+  // Line length — disabled. We don't hard-wrap prose, Prettier preserves
+  // paragraphs, and long lines are fine in source for diff-friendliness.
+  "MD013": false,
+
+  // Material lets multiple H1s be valid (e.g. tabbed pages) and many themes
+  // already render the page title — disable the "first line must be H1" rule.
+  "MD041": false,
+
+  // Inline HTML is required by the Material hero/grid card patterns.
+  "MD033": false,
+
+  // Material admonitions (`!!! note`) and tabbed blocks use indented lists
+  // with 4-space indents that this rule complains about.
+  "MD007": { "indent": 4 },
+  "MD030": false,
+
+  // Duplicate headings can legitimately appear inside tabbed content.
+  "MD024": { "siblings_only": true },
+
+  // We use bare URLs occasionally for clarity in admonitions.
+  "MD034": false,
+
+  // Allow trailing punctuation in headings (questions, etc.).
+  "MD026": false,
+
+  // We use both `---` (page HR) and `***` (HR inside grid cards) — both are
+  // valid CommonMark, so don't insist on one style.
+  "MD035": false,
+}

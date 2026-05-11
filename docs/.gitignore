@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+.venv/
+
+# mkdocs build output
+site/
+
+# Tool caches
+.cache/
+.lycheecache
+
+# OS
+.DS_Store

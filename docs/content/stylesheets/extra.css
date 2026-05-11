@@ -1,0 +1,84 @@
+/* Flightlog brand palette — matches the logo & app's primary button blue. */
+:root {
+  --flightlog-blue: #1e40c8;
+  --flightlog-blue-dark: #1735a8;
+  --flightlog-blue-light: #4263ec;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--flightlog-blue);
+  --md-primary-fg-color--light: var(--flightlog-blue-light);
+  --md-primary-fg-color--dark: var(--flightlog-blue-dark);
+  --md-accent-fg-color: var(--flightlog-blue);
+  --md-accent-fg-color--transparent: rgba(30, 64, 200, 0.1);
+  --md-typeset-a-color: var(--flightlog-blue);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--flightlog-blue);
+  --md-primary-fg-color--light: var(--flightlog-blue-light);
+  --md-primary-fg-color--dark: var(--flightlog-blue-dark);
+  --md-accent-fg-color: var(--flightlog-blue-light);
+  --md-accent-fg-color--transparent: rgba(66, 99, 236, 0.15);
+  --md-typeset-a-color: var(--flightlog-blue-light);
+}
+
+/* JetBrains Mono is wider than a sans face — tune typography so long-form prose stays readable. */
+.md-typeset {
+  font-feature-settings: "ss01", "ss02", "cv11", "calt";
+  letter-spacing: -0.01em;
+}
+
+.md-typeset p,
+.md-typeset li {
+  line-height: 1.65;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+/* Soften screenshot edges so they sit nicely on either theme. */
+.md-typeset img[src*="screenshots/"] {
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Tighter, more polished hero on the landing page. */
+.flightlog-hero {
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.flightlog-hero img {
+  width: 128px;
+  height: 128px;
+  border-radius: 24px;
+}
+
+.flightlog-hero h1 {
+  margin: 0.75rem 0 0.25rem;
+  font-weight: 700;
+}
+
+.flightlog-hero p {
+  color: var(--md-default-fg-color--light);
+  margin-top: 0;
+}
+
+/* Landing-page call-to-action row — centred, comfortable spacing, wraps cleanly. */
+.flightlog-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 1.5rem 0 2rem;
+}
+
+.flightlog-cta .md-button {
+  margin: 0;
+}

@@ -1,0 +1,20 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": ["site/**", ".venv/**", "node_modules/**", "uv.lock", "pyproject.toml"],
+  "dictionaryDefinitions": [
+    {
+      "name": "flightlog",
+      "path": "./.cspell-dict.txt",
+      "addWords": true
+    }
+  ],
+  "dictionaries": ["flightlog"],
+  "ignoreRegExpList": [
+    "/`[^`]*`/",
+    "/```[\\s\\S]*?```/",
+    "/\\b[A-Z]{2,4}\\d{1,5}\\b/",
+    "/\\b[A-Z]{3,4}\\b/",
+    "/:[a-z][a-z0-9-]+:/"
+  ]
+}

@@ -1,0 +1,39 @@
+# Project-specific terms cspell would otherwise flag.
+# Keep this list minimal — short uppercase acronyms and flight/airline codes
+# are matched by the ignoreRegExpList in .cspell.json.
+
+# Product / service names
+Flightlog
+AeroDataBox
+RapidAPI
+Flighty
+Traefik
+Cloudflare
+SQLite
+
+# Traefik label values (also appear in code blocks)
+websecure
+certresolver
+loadbalancer
+
+# Things we say in prose
+homelab
+backfill
+codeshares
+quickstart
+deduplicate
+tombstone
+self-serve
+self-hosted
+single-tenant
+
+# British spellings used in docs
+travellers
+affordances
+recognised
+summarise
+kilometres
+aeroplane
+
+# Brands referenced once
+Bitwarden
