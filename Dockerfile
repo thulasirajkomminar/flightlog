@@ -5,14 +5,14 @@ RUN npm install -g pnpm
 
 WORKDIR /app
 
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ .
 RUN pnpm build
 
 # Build backend
-FROM golang:1.26.2-alpine AS backend-builder
+FROM golang:1.26.3-alpine AS backend-builder
 
 WORKDIR /app
 
