@@ -1,0 +1,28 @@
+# lychee link-check config.
+# https://lychee.cli.rs/configuration
+
+# Accept everything in the 2xx range as healthy; some doc-site link checks
+# are otherwise tripped up by 403/429 from rate-limited destinations.
+accept = ["200..=299", "403", "429"]
+
+# Be patient with sites that throttle CI runners.
+timeout = 20
+max_retries = 3
+retry_wait_time = 5
+
+# Cache results between runs so we don't hammer the same hosts.
+cache = true
+max_cache_age = "1d"
+
+# Skip checking obviously local-only or example URLs.
+exclude = [
+  # Local instances referenced in deployment docs.
+  '^https?://localhost(:\d+)?(/.*)?$',
+  '^https?://127\.0\.0\.1.*$',
+  # Example hostnames used in code blocks.
+  '^https?://flightlog\.example\.com.*$',
+  # Edit-this-page links point to a path on the live repo; mkdocs-material
+  # rewrites them per-page so lychee sees noisy ones in raw markdown.
+  '^https?://github\.com/.*/edit/.*$',
+]
+

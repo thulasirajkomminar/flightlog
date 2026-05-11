@@ -2,7 +2,7 @@
 <!-- markdownlint-disable MD033 -->
 <h1>
 <p align="center">
-  <img src="./docs/assets/logo.png" alt="Logo" height="200" width="200">
+  <img src="./docs/content/assets/logo.png" alt="Logo" height="200" width="200">
   <br>Flightlog
 </p>
 </h1>
@@ -12,13 +12,13 @@ A simple app to log and manage your flight history.
 
 ## Screenshots
 
-![Login](docs/assets/screenshots/01-login-page.png)
+![Login](docs/content/assets/screenshots/01-login-page.png)
 
-![Dashboard](docs/assets/screenshots/02-dashboard-page.png)
+![Dashboard](docs/content/assets/screenshots/02-dashboard-page.png)
 
-![Search and Add Flight](docs/assets/screenshots/03-search-and-add-flight-page.png)
+![Search and Add Flight](docs/content/assets/screenshots/03-search-and-add-flight-page.png)
 
-![My Flights](docs/assets/screenshots/04-my-flights-page.png)
+![My Flights](docs/content/assets/screenshots/04-my-flights-page.png)
 
 ## Getting Started
 
