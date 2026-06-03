@@ -8,6 +8,7 @@
   "schedule": [
     "before 9am"
   ],
+  "minimumReleaseAge": "3 days",
   "labels": [
     "dependencies"
   ],
