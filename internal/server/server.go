@@ -47,7 +47,6 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
 	r.Use(Logger(logger.GetLogger()))
 	r.Use(chimiddleware.Recoverer)
 	r.Use(SecurityHeaders(deps.ScriptHashes))
