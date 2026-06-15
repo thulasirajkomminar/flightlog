@@ -30,7 +30,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-s -w -X main.version=${VERSION}" -o main cmd/api/main.go
 
 # Final stage
-FROM alpine:3.23
+FROM alpine:3.24
 
 RUN apk --no-cache add ca-certificates tzdata
 
