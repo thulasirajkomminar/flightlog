@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: docs
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -36,7 +36,7 @@ jobs:
     name: markdownlint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: markdownlint-cli2
         uses: DavidAnson/markdownlint-cli2-action@v23
@@ -52,7 +52,7 @@ jobs:
       run:
         working-directory: docs
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -66,7 +66,7 @@ jobs:
     name: Spell check
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: cspell
         uses: streetsidesoftware/cspell-action@v8
@@ -79,7 +79,7 @@ jobs:
     name: Link check (lychee)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: lychee
         uses: lycheeverse/lychee-action@v2
