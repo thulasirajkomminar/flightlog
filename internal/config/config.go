@@ -2,11 +2,15 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"net/netip"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 )
+
+var errInvalidTrustedProxy = errors.New("SERVER_TRUSTED_PROXIES entries must be CIDR prefixes like 172.18.0.0/16")
 
 // Config holds application configuration.
 type Config struct {
@@ -21,7 +25,8 @@ type Config struct {
 
 // ServerConfig holds server settings.
 type ServerConfig struct {
-	Port string `env:"PORT" envDefault:"8080"`
+	Port           string   `env:"PORT"            envDefault:"8080"`
+	TrustedProxies []string `env:"TRUSTED_PROXIES"`
 }
 
 // DatabaseConfig holds database settings.
@@ -48,6 +53,13 @@ func Load() (*Config, error) {
 	err := env.Parse(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	for _, prefix := range cfg.Server.TrustedProxies {
+		_, err := netip.ParsePrefix(prefix)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %q: %w", errInvalidTrustedProxy, prefix, err)
+		}
 	}
 
 	applyLogDefaults(cfg)

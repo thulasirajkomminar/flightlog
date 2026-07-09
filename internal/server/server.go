@@ -36,10 +36,11 @@ type Dependencies struct {
 	ProviderHandler *provider.Handler
 	UserHandler     *user.Handler
 
-	JWTSecret    string
-	Version      string
-	WebFS        fs.FS
-	ScriptHashes []string
+	JWTSecret      string
+	Version        string
+	WebFS          fs.FS
+	ScriptHashes   []string
+	TrustedProxies []string
 }
 
 // SetupRouter creates and configures the chi router.
@@ -51,6 +52,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(SecurityHeaders(deps.ScriptHashes))
 	r.Use(chimiddleware.Compress(compressLevel))
+	r.Use(ClientIP(deps.TrustedProxies))
 	r.Use(RateLimitByIP(ipRequestsPerMinute, 1*time.Minute))
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
