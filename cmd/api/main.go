@@ -190,6 +190,7 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 		Version:         version,
 		WebFS:           web.Frontend(),
 		ScriptHashes:    web.InlineScriptHashes(),
+		TrustedProxies:  cfg.Server.TrustedProxies,
 	}
 	r := server.SetupRouter(deps)
 

@@ -15,11 +15,12 @@ If either of these is missing, Flightlog will refuse to start.
 
 ## Optional
 
-| Variable      | Default      | What it does                                                                                                                                                   |
-| ------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENVIRONMENT` | `production` | Set to `development` to enable verbose console output and debug-mode UI affordances. Leave at `production` for any real deployment.                            |
-| `SERVER_PORT` | `8080`       | The port Flightlog listens on inside the container. You usually don't need to change this — change the host-side port mapping in `docker-compose.yml` instead. |
-| `LOG_LEVEL`   | `info`       | One of `debug`, `info`, `warn`, `error`. Bump to `debug` when something's not behaving and you want to see what's happening.                                   |
+| Variable                 | Default      | What it does                                                                                                                                                                                                                                                                   |
+| ------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ENVIRONMENT`            | `production` | Set to `development` to enable verbose console output and debug-mode UI affordances. Leave at `production` for any real deployment.                                                                                                                                            |
+| `SERVER_PORT`            | `8080`       | The port Flightlog listens on inside the container. You usually don't need to change this — change the host-side port mapping in `docker-compose.yml` instead.                                                                                                                 |
+| `SERVER_TRUSTED_PROXIES` | *(empty)*    | Comma-separated CIDR list of reverse proxies allowed to set `X-Forwarded-For` (e.g. `172.18.0.0/16`). Set this when Flightlog runs behind a reverse proxy so per-IP rate limiting sees real client IPs instead of the proxy's. Leave empty when Flightlog is exposed directly. |
+| `LOG_LEVEL`              | `info`       | One of `debug`, `info`, `warn`, `error`. Bump to `debug` when something's not behaving and you want to see what's happening.                                                                                                                                                   |
 
 ## Example `.env`
 

@@ -116,14 +116,31 @@ func Logger(log *zap.Logger) func(next http.Handler) http.Handler {
 	}
 }
 
-// RateLimitByIP returns per-IP rate limiting middleware.
+// ClientIP resolves the client IP for downstream middleware such as
+// RateLimitByIP. With trusted proxy CIDRs configured it reads the client IP
+// from X-Forwarded-For, skipping trusted hops; otherwise it uses the
+// connection's remote address, which is correct when Flightlog is exposed
+// directly rather than behind a reverse proxy.
+func ClientIP(trustedProxies []string) func(http.Handler) http.Handler {
+	if len(trustedProxies) > 0 {
+		return middleware.ClientIPFromXFF(trustedProxies...)
+	}
+
+	return middleware.ClientIPFromRemoteAddr
+}
+
+// RateLimitByIP returns per-IP rate limiting middleware. It keys off the IP
+// resolved by the ClientIP middleware, which must be installed upstream;
+// requests without a resolved IP share one global bucket.
 func RateLimitByIP(requests int, window time.Duration) func(next http.Handler) http.Handler {
-	return httprate.LimitByIP(requests, window)
+	return httprate.LimitBy(requests, window, func(r *http.Request) (string, error) {
+		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
+	})
 }
 
 // RateLimitByUser returns per-user rate limiting middleware.
 func RateLimitByUser(requests int, window time.Duration) func(next http.Handler) http.Handler {
-	return httprate.Limit(requests, window, httprate.WithKeyFuncs(api.UserRateKey))
+	return httprate.LimitBy(requests, window, api.UserRateKey)
 }
 
 // SecurityHeaders adds browser security headers to all responses.

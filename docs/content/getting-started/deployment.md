@@ -44,6 +44,7 @@ services:
     environment:
       - AERODATABOX_API_KEY=${AERODATABOX_API_KEY}
       - AUTH_JWT_SECRET=${AUTH_JWT_SECRET}
+      - SERVER_TRUSTED_PROXIES=172.18.0.0/16
     labels:
       - traefik.enable=true
       - traefik.http.routers.flightlog.entrypoints=websecure
