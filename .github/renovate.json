@@ -101,6 +101,13 @@
         "dependencies",
         "major-update"
       ]
+    },
+    {
+      "description": "typescript-eslint does not support TypeScript 7 (native port) yet — typescript-eslint/typescript-eslint#12518",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<7"
     }
   ]
 }
