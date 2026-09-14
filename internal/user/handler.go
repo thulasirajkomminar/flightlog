@@ -227,6 +227,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) generateToken(user *domain.User) (string, error) {
 	now := time.Now()
 
+	//nolint:modernize // golangci-lint's own typecheck rejects the go1.27 flattened-embedded-field literal it suggests here
 	claims := &api.UserClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(defaultTokenExpiry)),

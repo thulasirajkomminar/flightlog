@@ -15,7 +15,13 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
 
-const seedPassword = "flightlog"
+const (
+	seedPassword = "flightlog"
+
+	tzAmericaNewYork  = "America/New_York"
+	modelBoeing787_9  = "Boeing 787-9 Dreamliner"
+	modelAirbusA350_9 = "Airbus A350-941"
+)
 
 func Run(db *gorm.DB) {
 	var count int64
@@ -99,7 +105,7 @@ type aircraftData struct {
 var airportsList = []airportData{
 	{"EHAM", "AMS", "Amsterdam Schiphol", "Schiphol", "Amsterdam", 52.3086, 4.7639, "NL", "Europe/Amsterdam"},
 	{"EGLL", "LHR", "London Heathrow", "Heathrow", "London", 51.4700, -0.4543, "GB", "Europe/London"},
-	{"KJFK", "JFK", "John F Kennedy Intl", "JFK", "New York", 40.6413, -73.7781, "US", "America/New_York"},
+	{"KJFK", "JFK", "John F Kennedy Intl", "JFK", "New York", 40.6413, -73.7781, "US", tzAmericaNewYork},
 	{"KLAX", "LAX", "Los Angeles Intl", "LAX", "Los Angeles", 33.9425, -118.4081, "US", "America/Los_Angeles"},
 	{"OMDB", "DXB", "Dubai Intl", "Dubai", "Dubai", 25.2532, 55.3657, "AE", "Asia/Dubai"},
 	{"WSSS", "SIN", "Singapore Changi", "Changi", "Singapore", 1.3502, 103.9944, "SG", "Asia/Singapore"},
@@ -112,7 +118,7 @@ var airportsList = []airportData{
 	{"RKSI", "ICN", "Incheon Intl", "Incheon", "Seoul", 37.4602, 126.4407, "KR", "Asia/Seoul"},
 	{"KSFO", "SFO", "San Francisco Intl", "SFO", "San Francisco", 37.6213, -122.3790, "US", "America/Los_Angeles"},
 	{"PHNL", "HNL", "Daniel K Inouye Intl", "Honolulu", "Honolulu", 21.3187, -157.9224, "US", "Pacific/Honolulu"},
-	{"KMIA", "MIA", "Miami Intl", "Miami", "Miami", 25.7959, -80.2870, "US", "America/New_York"},
+	{"KMIA", "MIA", "Miami Intl", "Miami", "Miami", 25.7959, -80.2870, "US", tzAmericaNewYork},
 	{"SBGR", "GRU", "Sao Paulo Guarulhos", "Guarulhos", "Sao Paulo", -23.4356, -46.4731, "BR", "America/Sao_Paulo"},
 	{"SAEZ", "EZE", "Buenos Aires Ezeiza", "Ezeiza", "Buenos Aires", -34.8222, -58.5358, "AR", "America/Argentina/Buenos_Aires"},
 	{"SCEL", "SCL", "Santiago Arturo Merino", "Santiago", "Santiago", -33.3930, -70.7858, "CL", "America/Santiago"},
@@ -161,8 +167,8 @@ var airportsList = []airportData{
 	{"VVNB", "HAN", "Noi Bai Intl", "Hanoi", "Hanoi", 21.2212, 105.8070, "VN", "Asia/Ho_Chi_Minh"},
 	{"SPJC", "LIM", "Jorge Chavez Intl", "Lima", "Lima", -12.0219, -77.1143, "PE", "America/Lima"},
 	{"SEQM", "UIO", "Quito Mariscal Sucre", "Quito", "Quito", -0.1292, -78.3575, "EC", "America/Guayaquil"},
-	{"KATL", "ATL", "Hartsfield Jackson Atlanta", "Atlanta", "Atlanta", 33.6407, -84.4277, "US", "America/New_York"},
-	{"KBOS", "BOS", "Boston Logan Intl", "Boston", "Boston", 42.3656, -71.0096, "US", "America/New_York"},
+	{"KATL", "ATL", "Hartsfield Jackson Atlanta", "Atlanta", "Atlanta", 33.6407, -84.4277, "US", tzAmericaNewYork},
+	{"KBOS", "BOS", "Boston Logan Intl", "Boston", "Boston", 42.3656, -71.0096, "US", tzAmericaNewYork},
 	{"BIKF", "KEF", "Keflavik Intl", "Keflavik", "Reykjavik", 63.9850, -22.6056, "IS", "Atlantic/Reykjavik"},
 	{"EETN", "TLL", "Tallinn Lennart Meri", "Tallinn", "Tallinn", 59.4133, 24.8328, "EE", "Europe/Tallinn"},
 	{"EVRA", "RIX", "Riga Intl", "Riga", "Riga", 56.9236, 23.9711, "LV", "Europe/Riga"},
@@ -204,27 +210,27 @@ var airlinesList = []airlineData{
 
 var aircraftList = []aircraftData{
 	{"OE-LSV", "440075", "Airbus A321-200 (Sharklets)"},
-	{"PH-BHA", "484125", "Boeing 787-9 Dreamliner"},
+	{"PH-BHA", "484125", modelBoeing787_9},
 	{"G-XWBA", "406A01", "Airbus A350-1041"},
 	{"D-AIMC", "3C6587", "Airbus A380-841"},
 	{"A6-ENA", "896452", "Boeing 777-31H(ER)"},
-	{"9V-SMA", "76CC12", "Airbus A350-941"},
+	{"9V-SMA", "76CC12", modelAirbusA350_9},
 	{"A7-BEA", "06A1B5", "Boeing 777-3DZ(ER)"},
 	{"TC-JJE", "4BA863", "Boeing 777-3F2(ER)"},
-	{"N501DN", "A62EC1", "Airbus A350-941"},
+	{"N501DN", "A62EC1", modelAirbusA350_9},
 	{"N78511", "ABF5A1", "Boeing 737 MAX 9"},
 	{"N795AN", "AC1DAD", "Boeing 777-223(ER)"},
-	{"VH-ZNA", "7C822A", "Boeing 787-9 Dreamliner"},
-	{"ZK-NZE", "C8200E", "Boeing 787-9 Dreamliner"},
-	{"CC-BGA", "E48DA5", "Boeing 787-9 Dreamliner"},
-	{"ET-AVJ", "040B9E", "Airbus A350-941"},
-	{"B-LRA", "780D28", "Airbus A350-941"},
-	{"HL8226", "71C482", "Boeing 787-9 Dreamliner"},
-	{"JA873J", "86E7FD", "Boeing 787-9 Dreamliner"},
-	{"SE-RSA", "4AC812", "Airbus A350-941"},
+	{"VH-ZNA", "7C822A", modelBoeing787_9},
+	{"ZK-NZE", "C8200E", modelBoeing787_9},
+	{"CC-BGA", "E48DA5", modelBoeing787_9},
+	{"ET-AVJ", "040B9E", modelAirbusA350_9},
+	{"B-LRA", "780D28", modelAirbusA350_9},
+	{"HL8226", "71C482", modelBoeing787_9},
+	{"JA873J", "86E7FD", modelBoeing787_9},
+	{"SE-RSA", "4AC812", modelAirbusA350_9},
 	{"HB-JNA", "4B1813", "Boeing 777-3DE(ER)"},
-	{"EC-MYX", "34169A", "Airbus A350-941"},
-	{"OH-LWA", "461E8A", "Airbus A350-941"},
+	{"EC-MYX", "34169A", modelAirbusA350_9},
+	{"OH-LWA", "461E8A", modelAirbusA350_9},
 	{"EI-DAA", "4CA201", "Airbus A320-214"},
 	{"CS-TJR", "49405B", "Airbus A321neo"},
 	{"OE-IVA", "440101", "Airbus A320-214"},
