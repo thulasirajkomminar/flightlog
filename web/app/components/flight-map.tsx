@@ -59,6 +59,8 @@ interface FlightMapProps {
 
 export default function FlightMap({ flights }: FlightMapProps) {
   const mapRef = useRef<L.Map | null>(null)
+  const mapTileUrl =
+    "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
 
   const routes = flights
     .filter(
@@ -121,7 +123,7 @@ export default function FlightMap({ flights }: FlightMapProps) {
       zoomControl={false}
       attributionControl={false}
     >
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+      <TileLayer url={mapTileUrl} />
       <ZoomControl />
 
       {routes.map((route) => (
