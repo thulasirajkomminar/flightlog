@@ -1,0 +1,6 @@
+# Vulnerabilities ignored by the security-golang-modules CI job (osv-scanner).
+# Each entry must carry a reason. Re-evaluate when the dependency changes.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Advisory covers golang.org/x/crypto/openpgp (unmaintained, no fixed version). This project only imports golang.org/x/crypto/bcrypt; openpgp is not in the dependency graph (go list -deps) and govulncheck reports no affected symbols."
