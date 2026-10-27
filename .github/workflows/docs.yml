@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     name: Build (mkdocs --strict)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: docs
@@ -34,7 +34,7 @@ jobs:
 
   markdownlint:
     name: markdownlint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -47,7 +47,7 @@ jobs:
 
   prettier:
     name: Prettier
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: docs
@@ -64,7 +64,7 @@ jobs:
 
   cspell:
     name: Spell check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -77,7 +77,7 @@ jobs:
 
   links:
     name: Link check (lychee)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
