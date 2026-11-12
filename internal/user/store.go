@@ -72,6 +72,12 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 			return err
 		}
 
+		// Flights the user imported or added by hand are theirs alone.
+		err = tx.Where("imported_by = ?", id).Delete(&domain.Flight{}).Error
+		if err != nil {
+			return err
+		}
+
 		// The user's import job can still hold rows from their uploaded file.
 		if tx.Migrator().HasTable(importJobsTable) {
 			err = tx.Exec("DELETE FROM "+importJobsTable+" WHERE user_id = ?", id).Error

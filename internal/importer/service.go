@@ -30,7 +30,7 @@ var (
 
 // FlightSearcher finds flights by number and date.
 type FlightSearcher interface {
-	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
+	SearchFlights(ctx context.Context, userID, flightNumber, date string) ([]*domain.Flight, error)
 }
 
 // FlightLinker links a flight to a user.
@@ -41,8 +41,8 @@ type FlightLinker interface {
 // FlightCacher reads and writes the flight cache.
 type FlightCacher interface {
 	Create(ctx context.Context, flight *domain.Flight) error
-	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
-	FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error)
+	FindByRoute(ctx context.Context, ownerID, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByDateAndRoute(ctx context.Context, ownerID, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error)
 }
 
 // AirportLookup resolves airport details.
@@ -222,18 +222,20 @@ func (s *Service) importEntry(
 	entry *ImportEntry,
 	opts importOptions,
 ) error {
-	if id, ok := s.findCached(ctx, entry); ok {
+	if id, ok := s.findCached(ctx, opts.userID, entry); ok {
 		return s.linkFlight(ctx, opts.userID, id)
 	}
 
 	if opts.enrich && entry.Date >= opts.cutoff {
-		flightID, found := s.tryEnrich(ctx, entry)
+		flightID, found := s.tryEnrich(ctx, opts.userID, entry)
 		if found {
 			return s.linkFlight(ctx, opts.userID, flightID)
 		}
 	}
 
 	flight := s.createFromImport(ctx, entry, opts.source)
+	// A flight built from someone's file is theirs alone; see domain.Flight.
+	flight.ImportedBy = opts.userID
 
 	err := s.cacher.Create(ctx, flight)
 	if err != nil {
@@ -243,15 +245,15 @@ func (s *Service) importEntry(
 	return s.linkFlight(ctx, opts.userID, flight.ID)
 }
 
-func (s *Service) findCached(ctx context.Context, entry *ImportEntry) (string, bool) {
-	cached, err := s.cacher.FindByRoute(ctx, entry.FlightNumber, entry.Date, entry.DepIATA, entry.ArrIATA)
+func (s *Service) findCached(ctx context.Context, userID string, entry *ImportEntry) (string, bool) {
+	cached, err := s.cacher.FindByRoute(ctx, userID, entry.FlightNumber, entry.Date, entry.DepIATA, entry.ArrIATA)
 	if err == nil && cached != nil {
 		return cached.ID, true
 	}
 
 	// Fallback: the same flight may be cached under its ICAO number ("KLM1001")
 	// while the file has the IATA one ("KL1001"), or the other way round.
-	candidates, err := s.cacher.FindByDateAndRoute(ctx, entry.Date, entry.DepIATA, entry.ArrIATA)
+	candidates, err := s.cacher.FindByDateAndRoute(ctx, userID, entry.Date, entry.DepIATA, entry.ArrIATA)
 	if err != nil {
 		return "", false
 	}
@@ -304,13 +306,10 @@ func isLetters(s string) bool {
 	return true
 }
 
-func (s *Service) tryEnrich(
-	ctx context.Context,
-	entry *ImportEntry,
-) (string, bool) {
+func (s *Service) tryEnrich(ctx context.Context, userID string, entry *ImportEntry) (string, bool) {
 	time.Sleep(searchThrottleDelay)
 
-	flight, enrichErr := s.enrichFromProvider(ctx, entry)
+	flight, enrichErr := s.enrichFromProvider(ctx, userID, entry)
 	if enrichErr == nil && flight != nil {
 		return flight.ID, true
 	}
@@ -324,8 +323,8 @@ func (s *Service) tryEnrich(
 	return "", false
 }
 
-func (s *Service) enrichFromProvider(ctx context.Context, entry *ImportEntry) (*domain.Flight, error) {
-	flights, err := s.searcher.SearchFlights(ctx, entry.FlightNumber, entry.Date)
+func (s *Service) enrichFromProvider(ctx context.Context, userID string, entry *ImportEntry) (*domain.Flight, error) {
+	flights, err := s.searcher.SearchFlights(ctx, userID, entry.FlightNumber, entry.Date)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

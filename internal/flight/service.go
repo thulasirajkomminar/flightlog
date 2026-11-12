@@ -43,8 +43,8 @@ type CacheRepository interface {
 	FindMiss(ctx context.Context, flightNumber, flightDate string) (time.Time, bool)
 	SaveMiss(ctx context.Context, flightNumber, flightDate string, checkedAt time.Time) error
 	PruneMisses(ctx context.Context, before time.Time) (int64, error)
-	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
-	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
+	FindByRoute(ctx context.Context, ownerID, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByNumberAndDate(ctx context.Context, ownerID, flightNumber, flightDate string) ([]*domain.Flight, error)
 }
 
 // UserFlightRepository manages user-to-flight associations.
@@ -100,17 +100,18 @@ func NewService(cache CacheRepository, userRepo UserFlightRepository, provider P
 	}
 }
 
-// SearchFlights checks the flight cache first for the flight_number+date combo.
+// SearchFlights checks the flight cache first for the flight_number+date combo,
+// including flights userID imported or added themselves.
 // If not found, or if a cached flight may have changed status since it was
 // cached, fetches from the provider and updates the cache.
-func (s *Service) SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+func (s *Service) SearchFlights(ctx context.Context, userID, flightNumber, date string) ([]*domain.Flight, error) {
 	now := time.Now().UTC()
 
 	if date == "" {
 		date = now.Format(time.DateOnly)
 	}
 
-	flights, err := s.cache.FindByNumberAndDate(ctx, flightNumber, date)
+	flights, err := s.cache.FindByNumberAndDate(ctx, userID, flightNumber, date)
 	if err == nil && len(flights) > 0 {
 		return s.searchCached(ctx, flights, flightNumber, date, now), nil
 	}
@@ -140,6 +141,7 @@ func (s *Service) ListFlights(ctx context.Context, criteria *domain.FlightSearch
 	}
 
 	formatFlightNumbers(flights)
+	markEditable(flights, criteria.UserID)
 
 	return flights, total, nil
 }
@@ -177,6 +179,7 @@ func (s *Service) GetFlight(ctx context.Context, userID, flightID string) (*doma
 	}
 
 	uf.Flight.Number = domain.FormatFlightNumber(uf.Flight.Number)
+	uf.Flight.Editable = uf.Flight.ImportedBy != "" && uf.Flight.ImportedBy == userID
 
 	return &uf.Flight, nil
 }
@@ -351,7 +354,9 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 // storeProviderFlight caches a provider flight, overwriting the existing cache
 // entry for the same flight and route so its ID (and user links) are kept.
 func (s *Service) storeProviderFlight(ctx context.Context, flight *domain.Flight) error {
-	cached, err := s.cache.FindByRoute(ctx, flight.Number, flight.FlightDate,
+	// Provider data is shared, so it only ever replaces a shared entry: a
+	// flight someone imported or typed in stays theirs, untouched.
+	cached, err := s.cache.FindByRoute(ctx, "", flight.Number, flight.FlightDate,
 		flight.Departure.Airport.IATA, flight.Arrival.Airport.IATA)
 	if err == nil {
 		flight.ID = cached.ID
@@ -374,6 +379,14 @@ func (s *Service) storeProviderFlight(ctx context.Context, flight *domain.Flight
 	s.backfiller.BackfillFromFlight(ctx, flight)
 
 	return nil
+}
+
+// markEditable flags the flights the user may change: the ones they imported
+// or added by hand. Provider data is shared and cannot be edited.
+func markEditable(flights []*domain.Flight, userID string) {
+	for _, f := range flights {
+		f.Editable = f.ImportedBy != "" && f.ImportedBy == userID
+	}
 }
 
 func formatFlightNumbers(flights []*domain.Flight) {

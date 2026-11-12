@@ -70,7 +70,7 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	flights, err := h.flightService.SearchFlights(r.Context(), flightNumber, date)
+	flights, err := h.flightService.SearchFlights(r.Context(), api.GetUser(r).UserID, flightNumber, date)
 	if err != nil {
 		respondSearchError(w, err)
 

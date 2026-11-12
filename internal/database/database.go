@@ -62,7 +62,30 @@ func migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to drop legacy distance cache: %w", err)
 	}
 
-	return dropLegacyFlightColumns(db)
+	err = dropLegacyFlightColumns(db)
+	if err != nil {
+		return err
+	}
+
+	return assignImportedFlights(db)
+}
+
+// assignImportedFlights makes flights that were imported before imports
+// became private belong to the one user who has them. A flight that several
+// users already share stays shared.
+func assignImportedFlights(db *gorm.DB) error {
+	err := db.Exec(`
+		UPDATE flights
+		SET imported_by = (SELECT MIN(user_id) FROM user_flights WHERE flight_id = flights.id)
+		WHERE imported_by = ''
+			AND provider NOT IN ('aerodatabox', 'seed')
+			AND (SELECT COUNT(DISTINCT user_id) FROM user_flights WHERE flight_id = flights.id) = 1
+	`).Error
+	if err != nil {
+		return fmt.Errorf("failed to assign imported flights to their users: %w", err)
+	}
+
+	return nil
 }
 
 // legacyFlightColumns are columns of the flights table that are no longer

@@ -96,13 +96,22 @@ func (s *CacheStore) PruneMisses(ctx context.Context, before time.Time) (int64, 
 	return result.RowsAffected, result.Error
 }
 
-// FindByRoute retrieves a cached flight by number, date, and route.
-func (s *CacheStore) FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error) {
+// visibleTo limits a query to flights a user may be matched with: provider
+// data, which is shared, and flights that user imported or added themselves.
+// An empty ownerID matches shared flights only.
+func visibleTo(db *gorm.DB, ownerID string) *gorm.DB {
+	return db.Where("imported_by = '' OR imported_by = ?", ownerID)
+}
+
+// FindByRoute retrieves a flight visible to ownerID by number, date, and
+// route, preferring shared provider data over the owner's own entry.
+func (s *CacheStore) FindByRoute(ctx context.Context, ownerID, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error) {
 	var flight domain.Flight
 
-	err := s.db.WithContext(ctx).
+	err := visibleTo(s.db.WithContext(ctx), ownerID).
 		Where("flight_number = ? AND flight_date = ? AND dep_airport_iata = ? AND arr_airport_iata = ?",
 			flightNumber, flightDate, depIATA, arrIATA).
+		Order("imported_by").
 		First(&flight).Error
 	if err != nil {
 		return nil, err
@@ -111,13 +120,15 @@ func (s *CacheStore) FindByRoute(ctx context.Context, flightNumber, flightDate, 
 	return &flight, nil
 }
 
-// FindByDateAndRoute retrieves all cached flights on a date and route, whatever their flight number.
-func (s *CacheStore) FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error) {
+// FindByDateAndRoute retrieves all flights visible to ownerID on a date and
+// route, whatever their flight number.
+func (s *CacheStore) FindByDateAndRoute(ctx context.Context, ownerID, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error) {
 	var flights []*domain.Flight
 
-	err := s.db.WithContext(ctx).
+	err := visibleTo(s.db.WithContext(ctx), ownerID).
 		Where("flight_date = ? AND dep_airport_iata = ? AND arr_airport_iata = ?",
 			flightDate, depIATA, arrIATA).
+		Order("imported_by").
 		Find(&flights).Error
 	if err != nil {
 		return nil, err
@@ -126,11 +137,11 @@ func (s *CacheStore) FindByDateAndRoute(ctx context.Context, flightDate, depIATA
 	return flights, nil
 }
 
-// FindByNumberAndDate retrieves cached flights by number and date.
-func (s *CacheStore) FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error) {
+// FindByNumberAndDate retrieves flights visible to ownerID by number and date.
+func (s *CacheStore) FindByNumberAndDate(ctx context.Context, ownerID, flightNumber, flightDate string) ([]*domain.Flight, error) {
 	var flights []*domain.Flight
 
-	err := s.db.WithContext(ctx).
+	err := visibleTo(s.db.WithContext(ctx), ownerID).
 		Where("flight_number = ? AND flight_date = ?", flightNumber, flightDate).
 		Find(&flights).Error
 	if err != nil {

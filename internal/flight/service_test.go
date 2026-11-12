@@ -132,7 +132,7 @@ func TestSearchFlightsRefreshesStaleNonFinalFlight(t *testing.T) {
 	cached := testFlight("KL1001", today, domain.FlightStatusScheduled)
 	insertFlight(t, db, cached, time.Now().Add(-time.Hour))
 
-	got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+	got, err := svc.SearchFlights(context.Background(), testUser, "KL1001", today)
 	if err != nil {
 		t.Fatalf("SearchFlights: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestSearchFlightsUsesCacheWhenFresh(t *testing.T) {
 			svc, db := newTestService(t, provider)
 			insertFlight(t, db, testFlight("KL1001", today, tt.status), tt.updatedAt)
 
-			got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+			got, err := svc.SearchFlights(context.Background(), testUser, "KL1001", today)
 			if err != nil {
 				t.Fatalf("SearchFlights: %v", err)
 			}
@@ -204,7 +204,7 @@ func TestSearchFlightsFallsBackToCacheWhenRefreshFails(t *testing.T) {
 	svc, db := newTestService(t, provider)
 	insertFlight(t, db, testFlight("KL1001", today, domain.FlightStatusScheduled), time.Now().Add(-time.Hour))
 
-	got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+	got, err := svc.SearchFlights(context.Background(), testUser, "KL1001", today)
 	if err != nil {
 		t.Fatalf("SearchFlights: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestSearchFlightsDoesNotRefreshFarFutureFlight(t *testing.T) {
 	nextMonth := time.Now().UTC().AddDate(0, 1, 0).Format(time.DateOnly)
 	insertFlight(t, db, testFlight("KL1001", nextMonth, domain.FlightStatusScheduled), time.Now().Add(-72*time.Hour))
 
-	got, err := svc.SearchFlights(context.Background(), "KL1001", nextMonth)
+	got, err := svc.SearchFlights(context.Background(), testUser, "KL1001", nextMonth)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("SearchFlights = %d flights, err %v", len(got), err)
 	}
@@ -580,7 +580,7 @@ func TestSearchFlightsRemembersMisses(t *testing.T) {
 	lastYear := time.Now().UTC().AddDate(-1, 0, 0).Format(time.DateOnly)
 
 	for range 3 {
-		_, err := svc.SearchFlights(ctx, "KL1001", lastYear)
+		_, err := svc.SearchFlights(ctx, testUser, "KL1001", lastYear)
 		if !errors.Is(err, ErrNoFlightsFound) {
 			t.Fatalf("err = %v, want ErrNoFlightsFound", err)
 		}
@@ -591,7 +591,7 @@ func TestSearchFlightsRemembersMisses(t *testing.T) {
 	}
 
 	// Another flight number is a different question.
-	_, _ = svc.SearchFlights(ctx, "KL1003", lastYear)
+	_, _ = svc.SearchFlights(ctx, testUser, "KL1003", lastYear)
 
 	if provider.calls != 2 {
 		t.Errorf("provider calls = %d, want 2", provider.calls)
@@ -606,7 +606,7 @@ func TestSearchFlightsRemembersMisses(t *testing.T) {
 
 	provider.flights = []*domain.Flight{testFlight("KL1001", lastYear, domain.FlightStatusLanded)}
 
-	got, err := svc.SearchFlights(ctx, "KL1001", lastYear)
+	got, err := svc.SearchFlights(ctx, testUser, "KL1001", lastYear)
 	if err != nil || len(got) != 1 || provider.calls != 3 {
 		t.Errorf("after expiry: %d flights, err %v, %d calls; want 1 flight from a third call", len(got), err, provider.calls)
 	}
@@ -630,7 +630,7 @@ func TestSearchFlightsSharesConcurrentLookups(t *testing.T) {
 
 	for i := range searches {
 		wg.Go(func() {
-			flights, _ := svc.SearchFlights(context.Background(), "KL1001", today)
+			flights, _ := svc.SearchFlights(context.Background(), testUser, "KL1001", today)
 			results[i] = len(flights)
 		})
 	}
@@ -739,5 +739,54 @@ func TestRefreshDueCanBeSwitchedOff(t *testing.T) {
 
 	if provider.calls != 0 {
 		t.Errorf("provider calls = %d, want 0 with status refresh switched off", provider.calls)
+	}
+}
+
+func TestSearchDoesNotShowAnotherUsersImportedFlight(t *testing.T) {
+	t.Parallel()
+
+	provider := &fakeProvider{}
+	svc, db := newTestService(t, provider)
+	ctx := context.Background()
+
+	imported := testFlight("KL1001", "2025-01-01", domain.FlightStatusLanded)
+	imported.ImportedBy = testUser
+	insertFlight(t, db, imported, time.Now())
+
+	own, err := svc.SearchFlights(ctx, testUser, "KL1001", "2025-01-01")
+	if err != nil || len(own) != 1 || provider.calls != 0 {
+		t.Errorf("owner's search = %d flights, err %v, %d provider calls; want their flight from the cache", len(own), err, provider.calls)
+	}
+
+	_, err = svc.SearchFlights(ctx, "someone-else", "KL1001", "2025-01-01")
+	if !errors.Is(err, ErrNoFlightsFound) || provider.calls != 1 {
+		t.Errorf("other user's search: err = %v, provider calls = %d; want the provider asked and nothing found", err, provider.calls)
+	}
+}
+
+func TestProviderDataDoesNotOverwriteAnImportedFlight(t *testing.T) {
+	t.Parallel()
+
+	today := time.Now().UTC().Format(time.DateOnly)
+	provider := &fakeProvider{flights: []*domain.Flight{testFlight("KL1001", today, domain.FlightStatusLanded)}}
+	svc, db := newTestService(t, provider)
+
+	imported := testFlight("KL1001", today, domain.FlightStatusScheduled)
+	imported.ImportedBy = testUser
+	imported.Aircraft.Model = "typed in by hand"
+	insertFlight(t, db, imported, time.Now())
+
+	// Another user's search fetches provider data for the same flight.
+	got, err := svc.SearchFlights(context.Background(), "someone-else", "KL1001", today)
+	if err != nil || len(got) != 1 || got[0].ID == imported.ID {
+		t.Fatalf("search = %+v, err %v; want a separate shared flight", got, err)
+	}
+
+	var kept domain.Flight
+
+	db.First(&kept, "id = ?", imported.ID)
+
+	if kept.Aircraft.Model != "typed in by hand" || kept.ImportedBy != testUser {
+		t.Errorf("imported flight after another user's search = %+v; want it untouched", kept)
 	}
 }

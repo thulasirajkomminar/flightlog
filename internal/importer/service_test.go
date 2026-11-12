@@ -65,9 +65,9 @@ func (c *fakeCache) Create(_ context.Context, f *domain.Flight) error {
 	return nil
 }
 
-func (c *fakeCache) FindByRoute(_ context.Context, number, date, dep, arr string) (*domain.Flight, error) {
+func (c *fakeCache) FindByRoute(_ context.Context, owner, number, date, dep, arr string) (*domain.Flight, error) {
 	for _, f := range c.flights {
-		if f.Number == number && f.FlightDate == date && f.Departure.Airport.IATA == dep && f.Arrival.Airport.IATA == arr {
+		if visible(f, owner) && f.Number == number && f.FlightDate == date && f.Departure.Airport.IATA == dep && f.Arrival.Airport.IATA == arr {
 			return f, nil
 		}
 	}
@@ -75,16 +75,21 @@ func (c *fakeCache) FindByRoute(_ context.Context, number, date, dep, arr string
 	return nil, errNotFound
 }
 
-func (c *fakeCache) FindByDateAndRoute(_ context.Context, date, dep, arr string) ([]*domain.Flight, error) {
+func (c *fakeCache) FindByDateAndRoute(_ context.Context, owner, date, dep, arr string) ([]*domain.Flight, error) {
 	var out []*domain.Flight
 
 	for _, f := range c.flights {
-		if f.FlightDate == date && f.Departure.Airport.IATA == dep && f.Arrival.Airport.IATA == arr {
+		if visible(f, owner) && f.FlightDate == date && f.Departure.Airport.IATA == dep && f.Arrival.Airport.IATA == arr {
 			out = append(out, f)
 		}
 	}
 
 	return out, nil
+}
+
+// visible mirrors the store rule: shared flights and the owner's own.
+func visible(f *domain.Flight, owner string) bool {
+	return f.ImportedBy == "" || f.ImportedBy == owner
 }
 
 // fakeLinker records which flight IDs were linked to the user.
@@ -244,5 +249,37 @@ func TestImportJobsArePerUserAndRestartable(t *testing.T) {
 	_, err = svc.StartImport(context.Background(), "user-1", entries, "flightlog", false)
 	if err != nil {
 		t.Errorf("StartImport after completion: %v", err)
+	}
+}
+
+func TestImportedFlightsStayPrivateToTheirOwner(t *testing.T) {
+	t.Parallel()
+
+	const alice, bob = "alice", "bob"
+
+	cache := &fakeCache{}
+	linker := &fakeLinker{}
+	svc := NewService(nil, linker, cache, nil)
+	entry := []ImportEntry{importEntry(klm1001)}
+
+	for _, userID := range []string{alice, bob, alice} {
+		result := svc.Import(t.Context(), userID, entry, "flightlog", false)
+		if result.Imported != 1 {
+			t.Fatalf("import for %s: %+v", userID, result)
+		}
+	}
+
+	// Each user gets a flight built from their own file; importing the same
+	// file again reuses that user's flight instead of adding a third.
+	if len(cache.flights) != 2 {
+		t.Fatalf("cached flights = %d, want one per user", len(cache.flights))
+	}
+
+	if cache.flights[0].ImportedBy != alice || cache.flights[1].ImportedBy != bob {
+		t.Errorf("owners = %q, %q; want alice and bob", cache.flights[0].ImportedBy, cache.flights[1].ImportedBy)
+	}
+
+	if linker.linked[0] == linker.linked[1] || linker.linked[0] != linker.linked[2] {
+		t.Errorf("linked flights = %v; want bob on a separate flight and alice reusing her own", linker.linked)
 	}
 }

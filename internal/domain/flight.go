@@ -118,6 +118,15 @@ type Flight struct {
 	CreatedAt           time.Time           `json:"createdAt"                 example:"2026-03-17T12:00:00Z"`
 	UpdatedAt           time.Time           `json:"updatedAt"                 example:"2026-03-17T12:00:00Z"`
 
+	// ImportedBy is the user who created this flight from a file or by hand.
+	// Such a flight is private to them: nobody else's search or import
+	// reuses it. Empty for provider data, which is shared between users.
+	ImportedBy string `json:"-" gorm:"column:imported_by;not null;default:'';index"`
+
+	// Editable tells the client whether the signed-in user may change this
+	// flight; it is set per request and not stored.
+	Editable bool `json:"editable" gorm:"-"`
+
 	// StatusChecks counts background status checks spent on this flight.
 	StatusChecks int `json:"-" gorm:"column:status_checks;not null;default:0"`
 }

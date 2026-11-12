@@ -94,3 +94,39 @@ func closeDB(t *testing.T, db *gorm.DB) {
 		t.Fatalf("Close: %v", err)
 	}
 }
+
+func TestOpenAssignsLegacyImportsToTheirOnlyUser(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "flightlog.db")
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	execAll(t, db, []string{
+		"INSERT INTO flights (id, provider) VALUES ('mine', 'flighty'), ('shared-import', 'flighty'), ('provider', 'aerodatabox')",
+		"INSERT INTO user_flights (id, user_id, flight_id) VALUES ('1', 'user-1', 'mine'), ('2', 'user-1', 'shared-import'), ('3', 'user-2', 'shared-import'), ('4', 'user-1', 'provider')",
+	})
+	closeDB(t, db)
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatalf("Open again: %v", err)
+	}
+
+	defer closeDB(t, db)
+
+	want := map[string]string{"mine": "user-1", "shared-import": "", "provider": ""}
+
+	for id, owner := range want {
+		var f domain.Flight
+
+		db.First(&f, "id = ?", id)
+
+		if f.ImportedBy != owner {
+			t.Errorf("flight %s owner = %q, want %q", id, f.ImportedBy, owner)
+		}
+	}
+}
