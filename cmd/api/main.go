@@ -29,7 +29,7 @@ import (
 const (
 	shutdownTimeout    = 10 * time.Second
 	serverReadTimeout  = 30 * time.Second
-	serverWriteTimeout = 10*time.Minute + 30*time.Second
+	serverWriteTimeout = 60 * time.Second
 	serverIdleTimeout  = 120 * time.Second
 )
 

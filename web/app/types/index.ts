@@ -4,6 +4,7 @@ export type {
   FlightListResponse,
   FlightRoute,
   FlightStats,
+  ImportJob,
   ImportPreview,
   ImportResult,
   Movement,

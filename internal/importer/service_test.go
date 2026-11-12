@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
@@ -153,5 +154,95 @@ func TestImportMatchesCachedFlights(t *testing.T) {
 				t.Errorf("expected a new cached flight to be created and linked, cache has %d flights", len(cache.flights))
 			}
 		})
+	}
+}
+
+// slowLinker blocks each link until released, to observe a running job.
+type slowLinker struct {
+	release chan struct{}
+}
+
+func (l *slowLinker) AddFlight(context.Context, string, string) error {
+	<-l.release
+
+	return nil
+}
+
+func waitForJob(t *testing.T, svc *Service, userID string, done func(Job) bool) Job {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		job, ok := svc.ImportStatus(userID)
+		if ok && done(job) {
+			return job
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for import job")
+
+	return Job{}
+}
+
+func TestStartImportRunsInBackgroundAndReportsProgress(t *testing.T) {
+	t.Parallel()
+
+	linker := &slowLinker{release: make(chan struct{})}
+	svc := NewService(nil, linker, &fakeCache{}, nil)
+	entries := []ImportEntry{importEntry("KL1001"), importEntry("KL1003"), importEntry("KL1005")}
+
+	job, err := svc.StartImport(context.Background(), "user-1", entries, "flightlog", false)
+	if err != nil || job.State != JobRunning || job.Total != 3 {
+		t.Fatalf("StartImport = %+v, %v; want a running job of 3", job, err)
+	}
+
+	linker.release <- struct{}{}
+
+	job = waitForJob(t, svc, "user-1", func(j Job) bool { return j.Processed == 1 })
+	if job.State != JobRunning || job.Result != nil {
+		t.Errorf("after one flight: %+v, want still running without a result", job)
+	}
+
+	_, err = svc.StartImport(context.Background(), "user-1", entries, "flightlog", false)
+	if !errors.Is(err, ErrImportRunning) {
+		t.Errorf("StartImport while running: err = %v, want ErrImportRunning", err)
+	}
+
+	close(linker.release)
+
+	job = waitForJob(t, svc, "user-1", func(j Job) bool { return j.State == JobCompleted })
+	if job.Processed != 3 || job.Result == nil || job.Result.Imported != 3 {
+		t.Errorf("finished job = %+v (result %+v), want 3 imported", job, job.Result)
+	}
+}
+
+func TestImportJobsArePerUserAndRestartable(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, &fakeLinker{}, &fakeCache{}, nil)
+	entries := []ImportEntry{importEntry("KL1001")}
+
+	_, ok := svc.ImportStatus("user-1")
+	if ok {
+		t.Fatal("status before any import: want none")
+	}
+
+	_, err := svc.StartImport(context.Background(), "user-1", entries, "flightlog", false)
+	if err != nil {
+		t.Fatalf("StartImport: %v", err)
+	}
+
+	waitForJob(t, svc, "user-1", func(j Job) bool { return j.State == JobCompleted })
+
+	_, ok = svc.ImportStatus("user-2")
+	if ok {
+		t.Error("user-2 sees user-1's job")
+	}
+
+	_, err = svc.StartImport(context.Background(), "user-1", entries, "flightlog", false)
+	if err != nil {
+		t.Errorf("StartImport after completion: %v", err)
 	}
 }

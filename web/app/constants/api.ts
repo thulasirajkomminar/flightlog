@@ -18,5 +18,6 @@ export const API_ENDPOINTS = {
     SOURCES: "/api/v1/import/sources",
     PREVIEW: "/api/v1/import/preview",
     IMPORT: "/api/v1/import",
+    STATUS: "/api/v1/import/status",
   },
 } as const

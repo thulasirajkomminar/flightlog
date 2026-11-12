@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -10,7 +11,7 @@ import (
 
 const (
 	maxUploadSize    = 5 << 20 // 5 MB
-	maxImportFlights = 100
+	maxImportFlights = 2000
 )
 
 // Handler exposes import endpoints.
@@ -33,7 +34,8 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusOK, h.service.Preview(entries))
 }
 
-// Import parses and imports flights from an uploaded file.
+// Import parses an uploaded file and starts importing it in the background.
+// It answers 202 with the new job; progress is served by Status.
 func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	user, entries := h.parseUpload(w, r)
 	if entries == nil {
@@ -47,16 +49,36 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 
 	enrich := r.URL.Query().Get("enrich") == "true"
-
-	// Detach from the request context so the import completes
-	// even if the client disconnects or chi's timeout middleware fires.
-	importCtx := context.WithoutCancel(r.Context())
-
 	source := r.URL.Query().Get("source")
 
-	result := h.service.Import(importCtx, user.UserID, entries, source, enrich)
+	// The import outlives this request, so detach it from the request context.
+	job, err := h.service.StartImport(context.WithoutCancel(r.Context()), user.UserID, entries, source, enrich)
+	if err != nil {
+		if errors.Is(err, ErrImportRunning) {
+			api.RespondError(w, http.StatusConflict, err.Error())
 
-	api.RespondJSON(w, http.StatusOK, result)
+			return
+		}
+
+		api.RespondError(w, http.StatusInternalServerError, "failed to start import")
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusAccepted, job)
+}
+
+// Status returns the user's running or most recently finished import, or 204
+// when there is none.
+func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.service.ImportStatus(api.GetUser(r).UserID)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, job)
 }
 
 // Sources returns supported import sources.

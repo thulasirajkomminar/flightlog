@@ -78,6 +78,7 @@ type Service struct {
 	linker   FlightLinker
 	cacher   FlightCacher
 	airports AirportLookup
+	jobs     *jobStore
 	log      *logger.ComponentLogger
 }
 
@@ -94,6 +95,7 @@ func NewService(
 		linker:   linker,
 		cacher:   cacher,
 		airports: airports,
+		jobs:     newJobStore(),
 		log:      logger.NewComponentLogger("importer"),
 	}
 
@@ -151,6 +153,23 @@ func (s *Service) Parse(source string, r io.Reader) ([]ImportEntry, error) {
 	return entries, nil
 }
 
+// record counts the outcome of importing one entry.
+func (r *ImportResult) record(entry *ImportEntry, err error) {
+	switch {
+	case err == nil:
+		r.Imported++
+	case errors.Is(err, domain.ErrFlightAlreadyAdded):
+		r.Skipped++
+	default:
+		r.Failed++
+		r.Errors = append(r.Errors, ImportError{
+			FlightNumber: entry.FlightNumber,
+			Date:         entry.Date,
+			Reason:       err.Error(),
+		})
+	}
+}
+
 type importOptions struct {
 	userID string
 	source string
@@ -160,6 +179,11 @@ type importOptions struct {
 
 // Import processes parsed entries: deduplicates, optionally enriches from the provider, and links to the user.
 func (s *Service) Import(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) *ImportResult {
+	return s.run(ctx, userID, entries, source, enrich, func(int) {})
+}
+
+// run imports entries one by one, reporting how many have been processed.
+func (s *Service) run(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool, onProgress func(processed int)) *ImportResult {
 	result := &ImportResult{Total: len(entries)}
 
 	opts := importOptions{
@@ -170,23 +194,8 @@ func (s *Service) Import(ctx context.Context, userID string, entries []ImportEnt
 	}
 
 	for i := range entries {
-		err := s.importEntry(ctx, &entries[i], opts)
-		if err != nil {
-			if errors.Is(err, domain.ErrFlightAlreadyAdded) {
-				result.Skipped++
-			} else {
-				result.Failed++
-				result.Errors = append(result.Errors, ImportError{
-					FlightNumber: entries[i].FlightNumber,
-					Date:         entries[i].Date,
-					Reason:       err.Error(),
-				})
-			}
-
-			continue
-		}
-
-		result.Imported++
+		result.record(&entries[i], s.importEntry(ctx, &entries[i], opts))
+		onProgress(i + 1)
 	}
 
 	s.log.Info("import completed",

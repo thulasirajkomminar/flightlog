@@ -102,6 +102,13 @@ export interface ImportPreview {
   enrichable: number
 }
 
+export interface ImportJob {
+  state: "running" | "completed"
+  total: number
+  processed: number
+  result?: ImportResult
+}
+
 export interface ImportResult {
   total: number
   imported: number

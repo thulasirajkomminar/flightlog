@@ -1,7 +1,7 @@
 import { api } from "~/lib/api"
 import { API_ENDPOINTS } from "~/constants"
 
-import type { ImportPreview, ImportResult } from "~/types"
+import type { ImportJob, ImportPreview } from "~/types"
 
 function fileForm(file: File): FormData {
   const form = new FormData()
@@ -18,15 +18,21 @@ export const importService = {
     )
   },
 
+  // Starts a background import and returns the new job.
   async importFlights(
     source: string,
     file: File,
     enrich: boolean
-  ): Promise<ImportResult> {
+  ): Promise<ImportJob> {
     const params = new URLSearchParams({ source, enrich: String(enrich) })
-    return api.upload<ImportResult>(
+    return api.upload<ImportJob>(
       `${API_ENDPOINTS.IMPORT.IMPORT}?${params}`,
       fileForm(file)
     )
+  },
+
+  // Returns the running or most recently finished import, or null if none.
+  async status(): Promise<ImportJob | null> {
+    return api.get<ImportJob | null>(API_ENDPOINTS.IMPORT.STATUS)
   },
 }

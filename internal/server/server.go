@@ -20,7 +20,6 @@ import (
 const (
 	compressLevel  = 5
 	requestTimeout = 30 * time.Second
-	importTimeout  = 10 * time.Minute
 )
 
 const (
@@ -97,12 +96,8 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 				r.Get("/import/sources", deps.ImportHandler.Sources)
 				r.Post("/import/preview", deps.ImportHandler.Preview)
-			})
-
-			// Import has its own timeout — not nested under the 30s group.
-			r.Group(func(r chi.Router) {
-				r.Use(chimiddleware.Timeout(importTimeout))
 				r.Post("/import", deps.ImportHandler.Import)
+				r.Get("/import/status", deps.ImportHandler.Status)
 			})
 		})
 	})

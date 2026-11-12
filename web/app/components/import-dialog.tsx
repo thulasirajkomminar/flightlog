@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { AirplaneTilt, TrayArrowDown } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
@@ -23,14 +23,30 @@ import {
 } from "~/components/ui/select"
 import { Switch } from "~/components/ui/switch"
 
-import type { ImportPreview } from "~/types"
+import type { ImportJob, ImportPreview, ImportResult } from "~/types"
 
 import { importService } from "~/services"
 
 const SOURCES: Record<string, string> = {
   flighty: "Flighty",
-  flightlog: "Flighlog",
+  flightlog: "Flightlog",
 }
+
+function announceResult(result: ImportResult) {
+  const parts = []
+  if (result.imported > 0) parts.push(`${result.imported} imported`)
+  if (result.skipped > 0) parts.push(`${result.skipped} skipped`)
+  if (result.failed > 0) parts.push(`${result.failed} failed`)
+
+  if (result.failed > 0) {
+    toast.warning(`Import completed: ${parts.join(", ")}`)
+  } else {
+    toast.success(`Import completed: ${parts.join(", ")}`)
+  }
+}
+
+const MAX_IMPORT_FLIGHTS = 2000
+const POLL_INTERVAL_MS = 1000
 
 interface ImportDialogProps {
   onImported: () => void
@@ -43,8 +59,13 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [enrich, setEnrich] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
+  // The import runs on the server; `job` mirrors its progress while it runs.
+  const [job, setJob] = useState<ImportJob | null>(null)
+  // Bumped when this dialog starts an import, to (re)start polling.
+  const [startedCount, setStartedCount] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isImporting = isStarting || job !== null
 
   function clearFile() {
     setFile(null)
@@ -59,8 +80,60 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
     setSource("")
     setEnrich(true)
     setIsLoading(false)
-    setIsImporting(false)
   }
+
+  // Latest callback, read when an import finishes, so a changing callback
+  // identity never restarts polling (which would announce the result again).
+  const onImportedRef = useRef(onImported)
+  useEffect(() => {
+    onImportedRef.current = onImported
+  }, [onImported])
+
+  // Follow the server-side import until it finishes. On first render this
+  // also picks up an import that was started before the page was (re)loaded;
+  // an import that had already finished by then is not announced again.
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let sawRunning = startedCount > 0
+
+    async function poll() {
+      let current: ImportJob | null
+      try {
+        current = await importService.status()
+      } catch {
+        if (!cancelled && sawRunning) {
+          timer = setTimeout(poll, POLL_INTERVAL_MS)
+        }
+        return
+      }
+      if (cancelled) return
+
+      if (current?.state === "running") {
+        sawRunning = true
+        setJob(current)
+        timer = setTimeout(poll, POLL_INTERVAL_MS)
+        return
+      }
+
+      setJob(null)
+      if (sawRunning && current?.result) {
+        announceResult(current.result)
+        onImportedRef.current()
+        setOpen(false)
+        setFile(null)
+        setPreview(null)
+        setSource("")
+      }
+    }
+
+    poll()
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [startedCount])
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0]
@@ -71,8 +144,10 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
 
     try {
       const result = await importService.preview(source, selected)
-      if (result.total > 100) {
-        toast.error(`Too many flights: ${result.total} (max 100)`)
+      if (result.total > MAX_IMPORT_FLIGHTS) {
+        toast.error(
+          `Too many flights: ${result.total} (max ${MAX_IMPORT_FLIGHTS})`
+        )
         clearFile()
         return
       }
@@ -90,51 +165,38 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
   async function handleImport() {
     if (!file) return
 
-    setIsImporting(true)
+    setIsStarting(true)
 
     try {
       const shouldEnrich = source !== "flightlog" && enrich
-      const result = await importService.importFlights(
-        source,
-        file,
-        shouldEnrich
-      )
-
-      const parts = []
-      if (result.imported > 0) parts.push(`${result.imported} imported`)
-      if (result.skipped > 0) parts.push(`${result.skipped} skipped`)
-      if (result.failed > 0) parts.push(`${result.failed} failed`)
-
-      if (result.failed > 0) {
-        toast.warning(`Import completed: ${parts.join(", ")}`)
-      } else {
-        toast.success(`Import completed: ${parts.join(", ")}`)
-      }
-
-      setOpen(false)
-      reset()
-      onImported()
+      setJob(await importService.importFlights(source, file, shouldEnrich))
+      setStartedCount((n) => n + 1)
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to import flights"
       )
     } finally {
-      setIsImporting(false)
+      setIsStarting(false)
     }
   }
+
+  const progressLabel = job
+    ? `Importing ${job.processed} / ${job.total}...`
+    : "Importing..."
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
         setOpen(v)
-        if (!v) reset()
+        // Closing the dialog does not stop a running import.
+        if (!v && !isImporting) reset()
       }}
     >
       <DialogTrigger asChild>
         <Button size="lg">
           <TrayArrowDown className="size-4" />
-          Import
+          {isImporting ? progressLabel : "Import"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -182,6 +244,29 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
             />
           </div>
 
+          {job && (
+            <div className="flex flex-col gap-2">
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label="Import progress"
+                aria-valuemin={0}
+                aria-valuemax={job.total}
+                aria-valuenow={job.processed}
+              >
+                <div
+                  className="h-full bg-primary transition-[width]"
+                  style={{
+                    width: `${job.total > 0 ? (job.processed / job.total) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The import keeps running if you close this dialog.
+              </p>
+            </div>
+          )}
+
           {isLoading && (
             <p className="text-sm text-muted-foreground">Validating file...</p>
           )}
@@ -225,7 +310,7 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
         <DialogFooter>
           <Button onClick={handleImport} disabled={!preview || isImporting}>
             {isImporting
-              ? "Importing..."
+              ? progressLabel
               : `Import ${preview?.total ?? 0} flights`}
           </Button>
         </DialogFooter>
