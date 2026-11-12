@@ -13,7 +13,10 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 )
 
-const minPasswordLength = 8
+const (
+	minPasswordLength = 8
+	logKeyUserID      = "user_id"
+)
 
 // Repository defines the contract for user persistence.
 type Repository interface {
@@ -21,6 +24,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
+	Delete(ctx context.Context, id string) error
 }
 
 // Service implements user operations.
@@ -72,7 +76,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	s.log.Info("user registered", zap.String("user_id", user.ID))
+	s.log.Info("user registered", zap.String(logKeyUserID, user.ID))
 
 	return user, nil
 }
@@ -92,12 +96,12 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*do
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		s.log.Warn("invalid password attempt", zap.String("user_id", user.ID))
+		s.log.Warn("invalid password attempt", zap.String(logKeyUserID, user.ID))
 
 		return nil, domain.ErrInvalidCredentials
 	}
 
-	s.log.Info("user authenticated", zap.String("user_id", user.ID))
+	s.log.Info("user authenticated", zap.String(logKeyUserID, user.ID))
 
 	return user, nil
 }
@@ -150,14 +154,86 @@ func (s *Service) UpdateProfile(ctx context.Context, userID, email, name string)
 	return user, nil
 }
 
+// ChangePassword replaces a user's password after verifying the current one.
+func (s *Service) ChangePassword(ctx context.Context, userID, current, replacement string) error {
+	user, err := s.verifyPassword(ctx, userID, current)
+	if err != nil {
+		return err
+	}
+
+	err = validatePassword(replacement)
+	if err != nil {
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(replacement), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	user.PasswordHash = string(hash)
+
+	err = s.repo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("update password for user %s: %w", userID, err)
+	}
+
+	s.log.Info("password changed", zap.String(logKeyUserID, userID))
+
+	return nil
+}
+
+// DeleteAccount permanently removes a user and their flight collection after
+// verifying their password.
+func (s *Service) DeleteAccount(ctx context.Context, userID, password string) error {
+	_, err := s.verifyPassword(ctx, userID, password)
+	if err != nil {
+		return err
+	}
+
+	err = s.repo.Delete(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("delete user %s: %w", userID, err)
+	}
+
+	s.log.Info("account deleted", zap.String(logKeyUserID, userID))
+
+	return nil
+}
+
+// verifyPassword loads a user and checks their password, returning
+// ErrInvalidCredentials on a mismatch.
+func (s *Service) verifyPassword(ctx context.Context, userID, password string) (*domain.User, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user %s: %w", userID, err)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		return nil, domain.ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
+func validatePassword(password string) error {
+	if len(password) < minPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", domain.ErrValidation, minPasswordLength)
+	}
+
+	return nil
+}
+
 func validateRegistration(email, password, name string) error {
 	err := validateEmail(email)
 	if err != nil {
 		return err
 	}
 
-	if len(password) < minPasswordLength {
-		return fmt.Errorf("%w: password must be at least %d characters", domain.ErrValidation, minPasswordLength)
+	err = validatePassword(password)
+	if err != nil {
+		return err
 	}
 
 	if name == "" {

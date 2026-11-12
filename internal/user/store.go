@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
@@ -56,6 +57,24 @@ func (s *Store) GetByEmail(ctx context.Context, email string) (*domain.User, err
 	}
 
 	return &user, nil
+}
+
+// Delete removes a user and their flight collection. Cached flights are
+// shared between users and are kept.
+func (s *Store) Delete(ctx context.Context, id string) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("user_id = ?", id).Delete(&domain.UserFlight{}).Error
+		if err != nil {
+			return err
+		}
+
+		return tx.Delete(&domain.User{}, "id = ?", id).Error
+	})
+	if err != nil {
+		return fmt.Errorf("delete user and collection: %w", err)
+	}
+
+	return nil
 }
 
 // Update saves changes to an existing user record.

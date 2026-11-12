@@ -4,6 +4,8 @@ export const API_ENDPOINTS = {
     LOGIN: "/api/v1/auth/login",
     LOGOUT: "/api/v1/auth/logout",
     ME: "/api/v1/auth/me",
+    PASSWORD: "/api/v1/auth/password",
+    CONFIG: "/api/v1/auth/config",
   },
   FLIGHTS: {
     LIST: "/api/v1/flights",

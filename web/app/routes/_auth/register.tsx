@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link } from "react-router"
+import { Link, Navigate } from "react-router"
 import { AirplaneTakeoff, WarningCircle } from "@phosphor-icons/react"
 
 import { Alert, AlertDescription } from "~/components/ui/alert"
@@ -19,7 +19,7 @@ import { ROUTES } from "~/constants"
 import { useAuth } from "~/contexts"
 
 export default function RegisterPage() {
-  const { register } = useAuth()
+  const { register, registrationEnabled } = useAuth()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -42,6 +42,11 @@ export default function RegisterPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // New accounts are switched off on this instance; there is nothing to do here.
+  if (!registrationEnabled) {
+    return <Navigate to={ROUTES.LOGIN} replace />
   }
 
   return (

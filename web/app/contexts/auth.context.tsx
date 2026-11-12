@@ -21,6 +21,9 @@ interface AuthContextValue {
   register: (email: string, password: string, name: string) => Promise<void>
   logout: () => void
   updateUser: (user: User) => void
+  deleteAccount: (password: string) => Promise<void>
+  // False when the instance does not accept new accounts.
+  registrationEnabled: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -28,7 +31,15 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    authService
+      .config()
+      .then((config) => setRegistrationEnabled(config.registrationEnabled))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     authService
@@ -71,13 +82,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate(ROUTES.LOGIN)
   }, [navigate])
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      await authService.deleteAccount(password)
+      document.cookie = "flightlog_sidebar=; path=/; max-age=0"
+      setUser(null)
+      navigate(ROUTES.LOGIN)
+    },
+    [navigate]
+  )
+
   const updateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser)
   }, [])
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, register, logout, updateUser }}
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        logout,
+        updateUser,
+        deleteAccount,
+        registrationEnabled,
+      }}
     >
       {children}
     </AuthContext.Provider>

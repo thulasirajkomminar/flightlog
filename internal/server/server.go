@@ -71,6 +71,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 			r.Use(chimiddleware.Timeout(requestTimeout))
 			r.Post("/auth/register", deps.UserHandler.Register)
 			r.Post("/auth/login", deps.UserHandler.Login)
+			r.Get("/auth/config", deps.UserHandler.Config)
 		})
 
 		// Authenticated routes
@@ -83,6 +84,8 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 				r.Get("/auth/me", deps.UserHandler.GetProfile)
 				r.Put("/auth/me", deps.UserHandler.UpdateProfile)
+				r.Delete("/auth/me", deps.UserHandler.DeleteAccount)
+				r.Put("/auth/password", deps.UserHandler.ChangePassword)
 				r.Post("/auth/logout", deps.UserHandler.Logout)
 
 				r.Get("/flights/search", deps.FlightHandler.SearchFlights)

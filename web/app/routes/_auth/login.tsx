@@ -19,7 +19,7 @@ import { ROUTES } from "~/constants"
 import { useAuth } from "~/contexts"
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, registrationEnabled } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -99,15 +99,17 @@ export default function LoginPage() {
               <Button type="submit" disabled={isSubmitting} size="lg">
                 {isSubmitting ? "Signing in..." : "Sign in"}
               </Button>
-              <div className="text-center text-sm text-muted-foreground">
-                Don&apos;t have an account?{" "}
-                <Link
-                  to={ROUTES.REGISTER}
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Sign up
-                </Link>
-              </div>
+              {registrationEnabled && (
+                <div className="text-center text-sm text-muted-foreground">
+                  Don&apos;t have an account?{" "}
+                  <Link
+                    to={ROUTES.REGISTER}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    Sign up
+                  </Link>
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

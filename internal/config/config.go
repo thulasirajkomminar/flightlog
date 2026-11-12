@@ -42,6 +42,8 @@ type AeroDataBoxConfig struct {
 // AuthConfig holds auth settings.
 type AuthConfig struct {
 	JWTSecret string `env:"JWT_SECRET,required"`
+	// RegistrationEnabled controls whether new accounts can be created.
+	RegistrationEnabled bool `env:"REGISTRATION_ENABLED" envDefault:"true"`
 }
 
 // Load parses environment variables into Config.

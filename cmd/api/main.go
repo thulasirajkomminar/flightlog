@@ -160,7 +160,7 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 
 	userStore := user.NewStore(db)
 	userService := user.NewService(userStore)
-	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret)
+	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret, cfg.Auth.RegistrationEnabled)
 
 	deps := &server.Dependencies{
 		FlightHandler:  flightHandler,

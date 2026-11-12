@@ -69,8 +69,11 @@ class ApiClient {
     })
   }
 
-  async delete<T = unknown>(path: string): Promise<T> {
-    return this.request<T>(path, { method: "DELETE" })
+  async delete<T = unknown>(path: string, data?: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: "DELETE",
+      body: data ? JSON.stringify(data) : undefined,
+    })
   }
 
   async upload<T = unknown>(path: string, form: FormData): Promise<T> {

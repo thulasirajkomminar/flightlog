@@ -15,7 +15,14 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
 
-const errInvalidBody = "invalid request body"
+const (
+	keyMessage              = "message"
+	errInvalidBody          = "invalid request body"
+	errRegistrationDisabled = "registration is disabled on this instance"
+	// errWrongPassword is answered with 400 rather than 401: a 401 would tell
+	// the client its session has expired.
+	errWrongPassword = "current password is incorrect"
+)
 
 // RegisterRequest represents a user registration request.
 type RegisterRequest struct {
@@ -42,6 +49,17 @@ type UpdateProfileRequest struct {
 	Name  string `json:"name"  example:"Thulasiraj Komminar"`
 }
 
+// ChangePasswordRequest represents a password change request.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// DeleteAccountRequest confirms account deletion with the user's password.
+type DeleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
 const (
 	defaultTokenExpiry = 24 * time.Hour
 	authCookieName     = "flightlog_token"
@@ -49,20 +67,34 @@ const (
 
 // Handler handles auth and profile HTTP endpoints.
 type Handler struct {
-	userService *Service
-	jwtSecret   []byte
+	userService         *Service
+	jwtSecret           []byte
+	registrationEnabled bool
 }
 
-// NewHandler creates a Handler.
-func NewHandler(userService *Service, jwtSecret string) *Handler {
+// NewHandler creates a Handler. When registrationEnabled is false, no new
+// accounts can be created.
+func NewHandler(userService *Service, jwtSecret string, registrationEnabled bool) *Handler {
 	return &Handler{
-		userService: userService,
-		jwtSecret:   []byte(jwtSecret),
+		userService:         userService,
+		jwtSecret:           []byte(jwtSecret),
+		registrationEnabled: registrationEnabled,
 	}
+}
+
+// Config returns the public auth settings the sign-in pages need.
+func (h *Handler) Config(w http.ResponseWriter, _ *http.Request) {
+	api.RespondJSON(w, http.StatusOK, map[string]bool{"registrationEnabled": h.registrationEnabled})
 }
 
 // Register handles user registration.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	if !h.registrationEnabled {
+		api.RespondError(w, http.StatusForbidden, errRegistrationDisabled)
+
+		return
+	}
+
 	var req RegisterRequest
 
 	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
@@ -141,7 +173,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	setAuthCookie(w, r, "", -time.Second)
 
-	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "logged out"})
 }
 
 // setAuthCookie sets the session cookie; a negative expiry deletes it. The
@@ -216,6 +248,67 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.RespondJSON(w, http.StatusOK, profile)
+}
+
+// ChangePassword updates the authenticated user's password.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req ChangePasswordRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, errInvalidBody)
+
+		return
+	}
+
+	err = h.userService.ChangePassword(r.Context(), api.GetUser(r).UserID, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		respondPasswordError(w, err)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "password changed"})
+}
+
+// DeleteAccount permanently deletes the authenticated user's account.
+func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	var req DeleteAccountRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, errInvalidBody)
+
+		return
+	}
+
+	err = h.userService.DeleteAccount(r.Context(), api.GetUser(r).UserID, req.Password)
+	if err != nil {
+		respondPasswordError(w, err)
+
+		return
+	}
+
+	setAuthCookie(w, r, "", -time.Second)
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "account deleted"})
+}
+
+// respondPasswordError maps errors from password-confirmed account actions.
+func respondPasswordError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrInvalidCredentials):
+		api.RespondError(w, http.StatusBadRequest, errWrongPassword)
+	case errors.Is(err, domain.ErrValidation):
+		api.RespondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrUserNotFound):
+		api.RespondError(w, http.StatusNotFound, domain.ErrUserNotFound.Error())
+	default:
+		api.RespondError(w, http.StatusInternalServerError, "request failed")
+	}
 }
 
 func (h *Handler) generateToken(user *domain.User) (string, error) {
