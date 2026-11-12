@@ -14,10 +14,6 @@ export const API_ENDPOINTS = {
     BY_ID: (id: string) => `/api/v1/flights/${id}`,
     ADD: (id: string) => `/api/v1/flights/${id}/add`,
   },
-  PROVIDERS: {
-    SEARCH: (provider: string) =>
-      `/api/v1/providers/${provider}/flights/search`,
-  },
   IMPORT: {
     SOURCES: "/api/v1/import/sources",
     PREVIEW: "/api/v1/import/preview",

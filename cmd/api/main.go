@@ -23,7 +23,6 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
 	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
-	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/provider/aerodatabox"
 	"github.com/thulasirajkomminar/flightlog/internal/server"
 	"github.com/thulasirajkomminar/flightlog/internal/user"
@@ -182,11 +181,6 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 
 	go flightService.RunRefresher(ctx)
 
-	providers := map[string]provider.FlightProvider{
-		aeroProvider.GetProviderName(): aeroProvider,
-	}
-	providerHandler := provider.NewHandler(providers)
-
 	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup)
 	importHandler := importer.NewHandler(importService)
 
@@ -195,15 +189,14 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret)
 
 	deps := &server.Dependencies{
-		FlightHandler:   flightHandler,
-		ImportHandler:   importHandler,
-		ProviderHandler: providerHandler,
-		UserHandler:     userHandler,
-		JWTSecret:       cfg.Auth.JWTSecret,
-		Version:         version,
-		WebFS:           web.Frontend(),
-		ScriptHashes:    web.InlineScriptHashes(),
-		TrustedProxies:  cfg.Server.TrustedProxies,
+		FlightHandler:  flightHandler,
+		ImportHandler:  importHandler,
+		UserHandler:    userHandler,
+		JWTSecret:      cfg.Auth.JWTSecret,
+		Version:        version,
+		WebFS:          web.Frontend(),
+		ScriptHashes:   web.InlineScriptHashes(),
+		TrustedProxies: cfg.Server.TrustedProxies,
 	}
 	r := server.SetupRouter(deps)
 

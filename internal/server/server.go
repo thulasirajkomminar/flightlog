@@ -14,7 +14,6 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
 	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
-	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/user"
 )
 
@@ -31,10 +30,9 @@ const (
 
 // Dependencies holds router dependencies.
 type Dependencies struct {
-	FlightHandler   *flight.Handler
-	ImportHandler   *importer.Handler
-	ProviderHandler *provider.Handler
-	UserHandler     *user.Handler
+	FlightHandler *flight.Handler
+	ImportHandler *importer.Handler
+	UserHandler   *user.Handler
 
 	JWTSecret      string
 	Version        string
@@ -88,7 +86,6 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 				r.Put("/auth/me", deps.UserHandler.UpdateProfile)
 				r.Post("/auth/logout", deps.UserHandler.Logout)
 
-				r.Get("/providers/{provider}/flights/search", deps.ProviderHandler.SearchFlights)
 				r.Get("/flights/search", deps.FlightHandler.SearchFlights)
 				r.Get("/flights/stats", deps.FlightHandler.GetStats)
 				r.Get("/flights/routes", deps.FlightHandler.GetRoutes)
