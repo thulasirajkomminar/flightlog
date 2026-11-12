@@ -11,6 +11,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,css,md}\"",
     "type-check": "tsc --noEmit",
     "typecheck": "react-router typegen && tsc",
+    "test": "vitest run",
     "audit": "pnpm audit --audit-level moderate",
     "pre-commit": "lint-staged",
     "prepare": "husky",
@@ -75,6 +76,7 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
   }
 }

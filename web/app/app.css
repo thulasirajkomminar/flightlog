@@ -132,7 +132,7 @@
     @apply isolate !bg-card !font-[inherit];
   }
   .airport-tooltip .maplibregl-popup-content {
-    @apply rounded-md bg-foreground px-3 py-1.5 text-sm text-background shadow-none;
+    @apply !rounded-md !bg-foreground !px-3 !py-1.5 text-sm !text-background !shadow-none;
   }
   .airport-tooltip .maplibregl-popup-tip {
     @apply hidden;
