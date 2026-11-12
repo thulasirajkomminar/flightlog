@@ -12,7 +12,7 @@ import { Minus, Plus } from "@phosphor-icons/react"
 
 import { Button } from "~/components/ui/button"
 import { ButtonGroup } from "~/components/ui/button-group"
-import { greatCirclePath } from "~/lib/geo"
+import { routePath } from "~/lib/geo"
 
 import type { FlightRoute, RouteAirport } from "~/types"
 
@@ -90,6 +90,15 @@ export default function FlightMap({ routes }: FlightMapProps) {
     return Array.from(byIata.values())
   }, [routes])
 
+  const paths = useMemo(
+    () =>
+      routes.map((route) => ({
+        key: `${route.departure.iata}-${route.arrival.iata}`,
+        path: routePath(route.departure.location, route.arrival.location),
+      })),
+    [routes]
+  )
+
   return (
     <MapContainer
       center={[30, 0]}
@@ -112,17 +121,16 @@ export default function FlightMap({ routes }: FlightMapProps) {
       <ZoomControl />
       <FitBounds airports={airports} />
 
-      {routes.map((route) => (
+      {paths.map(({ key, path }) => (
         <Polyline
-          key={`${route.departure.iata}-${route.arrival.iata}`}
-          positions={greatCirclePath(
-            route.departure.location,
-            route.arrival.location
-          )}
+          key={key}
+          positions={path.positions}
           pathOptions={{
             color: "#3b82f6",
             weight: 2,
             opacity: 0.6,
+            // Dashed marks a plain connection that is not the path flown.
+            dashArray: path.direct ? "6 6" : undefined,
           }}
         />
       ))}
