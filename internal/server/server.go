@@ -86,6 +86,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 				r.Put("/auth/password", deps.UserHandler.ChangePassword)
 				r.Post("/auth/logout", deps.UserHandler.Logout)
 
+				r.Get("/provider/quota", deps.FlightHandler.GetQuota)
 				r.Get("/flights/search", deps.FlightHandler.SearchFlights)
 				r.Get("/flights/stats", deps.FlightHandler.GetStats)
 				r.Get("/flights/routes", deps.FlightHandler.GetRoutes)
@@ -101,6 +102,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 				r.Post("/import/preview", deps.ImportHandler.Preview)
 				r.Post("/import", deps.ImportHandler.Import)
 				r.Get("/import/status", deps.ImportHandler.Status)
+				r.Post("/import/cancel", deps.ImportHandler.Cancel)
 			})
 		})
 	})

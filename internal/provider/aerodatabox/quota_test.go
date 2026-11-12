@@ -84,3 +84,27 @@ func TestQuotaBlocksAfterTooManyRequests(t *testing.T) {
 		t.Error("want a 15 minute pause when the API gives no Retry-After")
 	}
 }
+
+func TestQuotaSnapshot(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	var q quota
+
+	if got := q.snapshot(now); got.Known || got.PausedUntil != nil {
+		t.Errorf("snapshot before any call = %+v, want unknown", got)
+	}
+
+	q.observe(http.StatusOK, headers(map[string]string{requestsLimit: "600", requestsRemaining: "412"}), now)
+
+	if got := q.snapshot(now); !got.Known || got.Limit != 600 || got.Remaining != 412 || got.PausedUntil != nil {
+		t.Errorf("snapshot = %+v, want 412 of 600", got)
+	}
+
+	q.observe(http.StatusTooManyRequests, nil, now)
+
+	if got := q.snapshot(now); got.PausedUntil == nil || !got.PausedUntil.After(now) {
+		t.Errorf("snapshot after a quota error = %+v, want a pause in the future", got)
+	}
+}

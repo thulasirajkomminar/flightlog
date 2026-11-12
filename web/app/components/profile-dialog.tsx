@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import {
@@ -24,8 +24,10 @@ import { Label } from "~/components/ui/label"
 import { Separator } from "~/components/ui/separator"
 import { ApiError } from "~/lib/api"
 
+import type { ProviderQuota } from "~/types"
+
 import { useAuth } from "~/contexts"
-import { authService } from "~/services"
+import { authService, flightService } from "~/services"
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -215,6 +217,46 @@ function DeleteAccount() {
   )
 }
 
+function quotaText(quota: ProviderQuota | null): string {
+  if (!quota) return "Loading..."
+  if (quota.pausedUntil) {
+    const until = new Date(quota.pausedUntil).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    return `Used up for now. Lookups are paused until ${until}.`
+  }
+  if (!quota.known) {
+    return "Not known yet. It shows here after the next flight lookup."
+  }
+  return `${quota.remaining.toLocaleString()} of ${quota.limit.toLocaleString()} requests left.`
+}
+
+// Shows how much of the flight data API quota is left, as last reported.
+function QuotaInfo() {
+  const [quota, setQuota] = useState<ProviderQuota | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    flightService
+      .quota()
+      .then((q) => {
+        if (!cancelled) setQuota(q)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-sm font-medium">Flight data API quota</h3>
+      <p className="text-sm text-muted-foreground">{quotaText(quota)}</p>
+    </div>
+  )
+}
+
 export function ProfileDialog({
   open,
   onOpenChange,
@@ -235,6 +277,8 @@ export function ProfileDialog({
         <ProfileForm onSaved={() => onOpenChange(false)} />
         <Separator />
         <PasswordForm />
+        <Separator />
+        <QuotaInfo />
         <Separator />
         <DeleteAccount />
       </DialogContent>

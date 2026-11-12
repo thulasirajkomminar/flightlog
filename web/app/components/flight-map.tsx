@@ -41,6 +41,27 @@ const ROUTE_COLOR = "#3b82f6"
 const WHOLE_GLOBE_ZOOM = 0.9
 
 type Projection = "globe" | "mercator"
+
+const PROJECTION_KEY = "flightlog.mapProjection"
+
+// The globe is the default; the choice is remembered in this browser.
+function savedProjection(): Projection {
+  try {
+    return localStorage.getItem(PROJECTION_KEY) === "mercator"
+      ? "mercator"
+      : "globe"
+  } catch {
+    return "globe"
+  }
+}
+
+function saveProjection(projection: Projection) {
+  try {
+    localStorage.setItem(PROJECTION_KEY, projection)
+  } catch {
+    // Storage can be unavailable (private mode); the choice just isn't kept.
+  }
+}
 // GeoJSON as accepted by a MapLibre source.
 type Features = Exclude<Parameters<GeoJSONSource["setData"]>[0], string>
 
@@ -182,7 +203,12 @@ export default function FlightMap({ routes }: FlightMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const [isReady, setIsReady] = useState(false)
-  const [projection, setProjection] = useState<Projection>("globe")
+  const [projection, setProjection] = useState<Projection>(savedProjection)
+
+  function chooseProjection(next: Projection) {
+    saveProjection(next)
+    setProjection(next)
+  }
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -274,7 +300,7 @@ export default function FlightMap({ routes }: FlightMapProps) {
           className={controlClass}
           aria-label={isGlobe ? "Show flat map" : "Show globe"}
           title={isGlobe ? "Show flat map" : "Show globe"}
-          onClick={() => setProjection(isGlobe ? "mercator" : "globe")}
+          onClick={() => chooseProjection(isGlobe ? "mercator" : "globe")}
         >
           {isGlobe ? (
             <MapTrifold className="size-4" />

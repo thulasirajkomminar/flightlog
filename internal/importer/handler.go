@@ -68,6 +68,17 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusAccepted, job)
 }
 
+// Cancel stops the user's running import. Flights imported so far are kept.
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	if !h.service.CancelImport(api.GetUser(r).UserID) {
+		api.RespondError(w, http.StatusNotFound, "no import is running")
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusAccepted, map[string]string{"message": "import is stopping"})
+}
+
 // Status returns the user's running or most recently finished import, or 204
 // when there is none.
 func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {

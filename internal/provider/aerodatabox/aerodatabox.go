@@ -139,6 +139,11 @@ func (p *Provider) LiveAirports(ctx context.Context) (map[string]struct{}, error
 	return airports, nil
 }
 
+// Quota returns what the API last reported about the request quota.
+func (p *Provider) Quota() domain.ProviderQuota {
+	return p.quota.snapshot(time.Now())
+}
+
 // BackgroundAllowed reports whether non-essential calls, such as status
 // refreshes, may spend API quota right now.
 func (p *Provider) BackgroundAllowed() bool {

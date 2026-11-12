@@ -300,6 +300,11 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusOK, stats)
 }
 
+// GetQuota returns the flight data provider's API quota as last reported.
+func (h *Handler) GetQuota(w http.ResponseWriter, _ *http.Request) {
+	api.RespondJSON(w, http.StatusOK, h.flightService.ProviderQuota())
+}
+
 // GetRoutes returns the distinct routes the user has flown, for the map.
 func (h *Handler) GetRoutes(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)

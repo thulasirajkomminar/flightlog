@@ -171,6 +171,16 @@ func (*FlightMiss) TableName() string {
 	return "flight_misses"
 }
 
+// ProviderQuota is what the flight data provider last reported about the API
+// quota. It is only known after at least one call has been made.
+type ProviderQuota struct {
+	Known     bool `json:"known"`
+	Limit     int  `json:"limit"`
+	Remaining int  `json:"remaining"`
+	// PausedUntil is set while the provider is refusing requests.
+	PausedUntil *time.Time `json:"pausedUntil,omitempty"`
+}
+
 // RouteAirport is the airport data needed to draw one end of a route.
 type RouteAirport struct {
 	IATA     string   `json:"iata"`

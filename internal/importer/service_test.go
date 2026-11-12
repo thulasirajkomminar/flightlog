@@ -283,3 +283,38 @@ func TestImportedFlightsStayPrivateToTheirOwner(t *testing.T) {
 		t.Errorf("linked flights = %v; want bob on a separate flight and alice reusing her own", linker.linked)
 	}
 }
+
+func TestCancelImportStopsAfterTheCurrentEntry(t *testing.T) {
+	t.Parallel()
+
+	const user = "user-9"
+
+	linker := &slowLinker{release: make(chan struct{})}
+	svc := NewService(nil, linker, &fakeCache{}, nil)
+	entries := []ImportEntry{importEntry("KL1001"), importEntry("KL1003"), importEntry("KL1005")}
+
+	if svc.CancelImport(user) {
+		t.Error("CancelImport with nothing running reported true")
+	}
+
+	_, err := svc.StartImport(context.Background(), user, entries, "flightlog", false)
+	if err != nil {
+		t.Fatalf("StartImport: %v", err)
+	}
+
+	// Let the first entry through, then cancel while the second is in flight.
+	linker.release <- struct{}{}
+
+	waitForJob(t, svc, user, func(j Job) bool { return j.Processed == 1 })
+
+	if !svc.CancelImport(user) {
+		t.Fatal("CancelImport reported nothing running")
+	}
+
+	close(linker.release)
+
+	job := waitForJob(t, svc, user, func(j Job) bool { return j.State == JobCompleted })
+	if job.Result == nil || !job.Result.Cancelled || job.Result.Imported != 2 {
+		t.Errorf("cancelled job result = %+v, want cancelled with the 2 entries already under way imported", job.Result)
+	}
+}

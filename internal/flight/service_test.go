@@ -41,6 +41,8 @@ type fakeProvider struct {
 
 func (p *fakeProvider) BackgroundAllowed() bool { return !p.noBackground }
 
+func (p *fakeProvider) Quota() domain.ProviderQuota { return domain.ProviderQuota{} }
+
 func (p *fakeProvider) SearchFlights(_ context.Context, _, _ string) ([]*domain.Flight, error) {
 	p.mu.Lock()
 	p.calls++

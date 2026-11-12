@@ -31,6 +31,11 @@ export const importService = {
     )
   },
 
+  // Stops the running import; flights imported so far are kept.
+  async cancel(): Promise<void> {
+    return api.post(API_ENDPOINTS.IMPORT.CANCEL)
+  },
+
   // Returns the running or most recently finished import, or null if none.
   async status(): Promise<ImportJob | null> {
     return api.get<ImportJob | null>(API_ENDPOINTS.IMPORT.STATUS)

@@ -174,23 +174,45 @@ func (s *Service) ResumeInterrupted(ctx context.Context) int {
 	return len(pending)
 }
 
-func (s *Service) runJob(ctx context.Context, job *PendingJob) {
+// CancelImport stops the user's running import after the entry it is working
+// on. Flights imported so far are kept. It reports whether one was running.
+func (s *Service) CancelImport(userID string) bool {
+	cancel, ok := s.cancels.Load(userID)
+	if !ok {
+		return false
+	}
+
+	if stop, isFunc := cancel.(context.CancelFunc); isFunc {
+		stop()
+	}
+
+	return true
+}
+
+func (s *Service) runJob(parent context.Context, job *PendingJob) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	s.cancels.Store(job.UserID, cancel)
+	defer s.cancels.Delete(job.UserID)
+
 	// A panic here would take the whole server down; fail the job instead.
 	defer func() {
 		if r := recover(); r != nil {
 			s.log.Error("import job panicked", fmt.Errorf("%w: %v", errJobPanic, r), zap.String(logKeyUserID, job.UserID))
-			s.finishJob(ctx, job.UserID, &ImportResult{Total: len(job.Entries), Failed: len(job.Entries)})
+			s.finishJob(parent, job.UserID, &ImportResult{Total: len(job.Entries), Failed: len(job.Entries)})
 		}
 	}()
 
 	result := s.run(ctx, job, func(processed int, soFar *ImportResult) {
-		err := s.jobs.Progress(ctx, job.UserID, processed, soFar)
+		err := s.jobs.Progress(parent, job.UserID, processed, soFar)
 		if err != nil {
 			s.log.Warn("failed to record import progress", zap.Error(err))
 		}
 	})
 
-	s.finishJob(ctx, job.UserID, result)
+	// The job context may be cancelled by now; record the outcome regardless.
+	s.finishJob(parent, job.UserID, result)
 }
 
 func (s *Service) finishJob(ctx context.Context, userID string, result *ImportResult) {

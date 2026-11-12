@@ -67,6 +67,8 @@ type Provider interface {
 	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
 	// BackgroundAllowed reports whether non-essential calls may spend quota.
 	BackgroundAllowed() bool
+	// Quota returns what the provider last reported about the API quota.
+	Quota() domain.ProviderQuota
 	GetProviderName() string
 }
 
@@ -220,6 +222,11 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*domain.FlightSt
 	}
 
 	return stats, nil
+}
+
+// ProviderQuota returns what the provider last reported about the API quota.
+func (s *Service) ProviderQuota() domain.ProviderQuota {
+	return s.provider.Quota()
 }
 
 // GetRoutes returns the distinct routes a user has flown.

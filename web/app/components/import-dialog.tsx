@@ -38,10 +38,14 @@ function announceResult(result: ImportResult) {
   if (result.skipped > 0) parts.push(`${result.skipped} skipped`)
   if (result.failed > 0) parts.push(`${result.failed} failed`)
 
-  if (result.failed > 0) {
-    toast.warning(`Import completed: ${parts.join(", ")}`)
+  const summary = parts.join(", ") || "nothing imported"
+
+  if (result.cancelled) {
+    toast.info(`Import cancelled: ${summary}`)
+  } else if (result.failed > 0) {
+    toast.warning(`Import completed: ${summary}`)
   } else {
-    toast.success(`Import completed: ${parts.join(", ")}`)
+    toast.success(`Import completed: ${summary}`)
   }
 }
 
@@ -180,6 +184,16 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
     }
   }
 
+  async function handleCancel() {
+    try {
+      await importService.cancel()
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to cancel the import"
+      )
+    }
+  }
+
   const progressLabel = job
     ? `Importing ${job.processed} / ${job.total}...`
     : "Importing..."
@@ -262,7 +276,8 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                The import keeps running if you close this dialog.
+                The import keeps running if you close this dialog. Cancelling
+                keeps the flights imported so far.
               </p>
             </div>
           )}
@@ -308,6 +323,11 @@ export function ImportDialog({ onImported }: ImportDialogProps) {
         </div>
 
         <DialogFooter>
+          {job && (
+            <Button variant="outline" onClick={handleCancel}>
+              Cancel import
+            </Button>
+          )}
           <Button onClick={handleImport} disabled={!preview || isImporting}>
             {isImporting
               ? progressLabel

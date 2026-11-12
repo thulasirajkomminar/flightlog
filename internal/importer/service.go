@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -52,11 +53,13 @@ type AirportLookup interface {
 
 // ImportResult summarises an import run.
 type ImportResult struct {
-	Total    int           `json:"total"`
-	Imported int           `json:"imported"`
-	Skipped  int           `json:"skipped"`
-	Failed   int           `json:"failed"`
-	Errors   []ImportError `json:"errors,omitempty"`
+	Total    int `json:"total"`
+	Imported int `json:"imported"`
+	Skipped  int `json:"skipped"`
+	Failed   int `json:"failed"`
+	// Cancelled is set when the user stopped the import before it finished.
+	Cancelled bool          `json:"cancelled,omitempty"`
+	Errors    []ImportError `json:"errors,omitempty"`
 }
 
 // ImportError records one failed entry.
@@ -80,7 +83,9 @@ type Service struct {
 	cacher   FlightCacher
 	airports AirportLookup
 	jobs     JobRepository
-	log      *logger.ComponentLogger
+	// cancels holds the stop function of each user's running import.
+	cancels sync.Map
+	log     *logger.ComponentLogger
 }
 
 // NewService returns a new import service.
@@ -203,6 +208,13 @@ func (s *Service) run(ctx context.Context, job *PendingJob, onProgress func(proc
 	}
 
 	for i := job.Processed; i < len(job.Entries); i++ {
+		// Stopped by the user: what was imported so far is kept.
+		if ctx.Err() != nil {
+			result.Cancelled = true
+
+			break
+		}
+
 		result.record(&job.Entries[i], s.importEntry(ctx, &job.Entries[i], opts))
 		onProgress(i+1, result)
 	}

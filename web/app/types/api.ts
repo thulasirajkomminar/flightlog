@@ -115,6 +115,14 @@ export interface ImportPreview {
   enrichable: number
 }
 
+// The flight data provider's API quota, as it last reported it.
+export interface ProviderQuota {
+  known: boolean
+  limit: number
+  remaining: number
+  pausedUntil?: string
+}
+
 export interface ImportJob {
   state: "running" | "completed"
   total: number
@@ -127,5 +135,7 @@ export interface ImportResult {
   imported: number
   skipped: number
   failed: number
+  // True when the user stopped the import before it finished.
+  cancelled?: boolean
   errors?: { flightNumber: string; date: string; reason: string }[]
 }

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
 
 const (
@@ -49,6 +51,21 @@ func (q *quota) observe(status int, h http.Header, now time.Time) {
 	if status == http.StatusTooManyRequests {
 		q.blockedUntil = now.Add(retryAfter(h))
 	}
+}
+
+// snapshot returns the last reported quota for display.
+func (q *quota) snapshot(now time.Time) domain.ProviderQuota {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	out := domain.ProviderQuota{Known: q.known, Limit: q.limit, Remaining: q.remaining}
+
+	if now.Before(q.blockedUntil) {
+		until := q.blockedUntil
+		out.PausedUntil = &until
+	}
+
+	return out
 }
 
 // blocked reports whether the API is currently refusing requests.

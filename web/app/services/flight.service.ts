@@ -7,6 +7,7 @@ import type {
   FlightRoute,
   FlightStats,
   ManualFlightInput,
+  ProviderQuota,
 } from "~/types"
 
 export const flightService = {
@@ -33,6 +34,10 @@ export const flightService = {
 
   async stats(): Promise<FlightStats> {
     return api.get<FlightStats>(API_ENDPOINTS.FLIGHTS.STATS)
+  },
+
+  async quota(): Promise<ProviderQuota> {
+    return api.get<ProviderQuota>(API_ENDPOINTS.PROVIDER.QUOTA)
   },
 
   async routes(): Promise<FlightRoute[]> {

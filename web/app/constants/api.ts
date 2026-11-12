@@ -16,10 +16,14 @@ export const API_ENDPOINTS = {
     BY_ID: (id: string) => `/api/v1/flights/${id}`,
     ADD: (id: string) => `/api/v1/flights/${id}/add`,
   },
+  PROVIDER: {
+    QUOTA: "/api/v1/provider/quota",
+  },
   IMPORT: {
     SOURCES: "/api/v1/import/sources",
     PREVIEW: "/api/v1/import/preview",
     IMPORT: "/api/v1/import",
     STATUS: "/api/v1/import/status",
+    CANCEL: "/api/v1/import/cancel",
   },
 } as const
