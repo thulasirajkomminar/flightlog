@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -40,11 +41,12 @@ func (s *Store) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	return &user, nil
 }
 
-// GetByEmail retrieves a user by email.
+// GetByEmail retrieves a user by email, ignoring case so accounts created
+// before addresses were normalised can still be found.
 func (s *Store) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
 
-	err := s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	err := s.db.WithContext(ctx).Where("LOWER(email) = ?", strings.ToLower(email)).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, domain.ErrUserNotFound
 	}

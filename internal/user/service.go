@@ -39,6 +39,8 @@ func NewService(repo Repository) *Service {
 
 // Register creates a new user account.
 func (s *Service) Register(ctx context.Context, email, password, name string) (*domain.User, error) {
+	email = normalizeEmail(email)
+
 	err := validateRegistration(email, password, name)
 	if err != nil {
 		return nil, err
@@ -77,7 +79,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 
 // Authenticate verifies user credentials.
 func (s *Service) Authenticate(ctx context.Context, email, password string) (*domain.User, error) {
-	user, err := s.repo.GetByEmail(ctx, email)
+	user, err := s.repo.GetByEmail(ctx, normalizeEmail(email))
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			s.log.Warn("login attempt for unknown email")
@@ -116,6 +118,8 @@ func (s *Service) GetProfile(ctx context.Context, userID string) (*domain.User, 
 
 // UpdateProfile updates a user's name and email.
 func (s *Service) UpdateProfile(ctx context.Context, userID, email, name string) (*domain.User, error) {
+	email = normalizeEmail(email)
+
 	err := validateEmail(email)
 	if err != nil {
 		return nil, err
@@ -163,6 +167,12 @@ func validateRegistration(email, password, name string) error {
 	return nil
 }
 
+// normalizeEmail makes addresses case-insensitive: "A@x.com" and "a@x.com"
+// are the same account.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
 func validateEmail(email string) error {
 	if email == "" {
 		return fmt.Errorf("%w: email is required", domain.ErrValidation)
@@ -177,7 +187,7 @@ func validateEmail(email string) error {
 }
 
 func (s *Service) checkEmailAvailability(ctx context.Context, newEmail, currentEmail string) error {
-	if newEmail == currentEmail {
+	if strings.EqualFold(newEmail, currentEmail) {
 		return nil
 	}
 

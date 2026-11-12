@@ -98,3 +98,48 @@ func TestAuthCookieSecureFollowsRequestScheme(t *testing.T) {
 		})
 	}
 }
+
+func TestEmailIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler(t)
+
+	rec := postJSON(t, h.Register, `{"email":"Jane@Example.com","password":"password123","name":"Jane"}`, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"email":"jane@example.com"`) {
+		t.Fatalf("register: status %d, body %s; want 201 with a lower-cased email", rec.Code, rec.Body.String())
+	}
+
+	rec = postJSON(t, h.Register, `{"email":"jane@example.com","password":"password123","name":"Jane 2"}`, nil)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("registering the same address in another case: status %d, want 409", rec.Code)
+	}
+
+	rec = postJSON(t, h.Login, `{"email":"JANE@EXAMPLE.COM","password":"password123"}`, nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("login with different case: status %d, want 200", rec.Code)
+	}
+}
+
+func TestLoginFindsLegacyMixedCaseAccount(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler(t)
+
+	// An account stored before normalisation keeps its mixed-case address.
+	legacy, err := h.userService.Register(t.Context(), "old@example.com", "password123", "Old")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	legacy.Email = "Old@Example.com"
+
+	err = h.userService.repo.Update(t.Context(), legacy)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	rec := postJSON(t, h.Login, `{"email":"old@example.com","password":"password123"}`, nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("login to legacy account: status %d, want 200", rec.Code)
+	}
+}
