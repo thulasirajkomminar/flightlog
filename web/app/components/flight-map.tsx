@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   CircleMarker,
   MapContainer,
@@ -13,7 +13,7 @@ import { Minus, Plus } from "@phosphor-icons/react"
 import { Button } from "~/components/ui/button"
 import { ButtonGroup } from "~/components/ui/button-group"
 
-import type { Flight } from "~/types"
+import type { FlightRoute, RouteAirport } from "~/types"
 
 import "leaflet/dist/leaflet.css"
 
@@ -53,66 +53,44 @@ function ZoomControl() {
   )
 }
 
-interface FlightMapProps {
-  flights: Flight[]
+// Zooms the map to fit all airports once they are known.
+function FitBounds({ airports }: { airports: RouteAirport[] }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (airports.length > 0) {
+      map.fitBounds(
+        airports.map((a) => [a.location.lat, a.location.lon]),
+        { padding: [50, 50], maxZoom: 10 }
+      )
+    }
+  }, [map, airports])
+
+  return null
 }
 
-export default function FlightMap({ flights }: FlightMapProps) {
-  const mapRef = useRef<L.Map | null>(null)
+interface FlightMapProps {
+  routes: FlightRoute[]
+}
+
+export default function FlightMap({ routes }: FlightMapProps) {
   // Keyless dark basemap (Esri Dark Gray Canvas). The tile host must stay
   // allowed in the CSP img-src directive (internal/server/middleware.go) or
   // tiles are blocked in production builds.
   const mapTileUrl =
     "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 
-  const routes = flights
-    .filter(
-      (f) =>
-        f.departure.airport.location.lat &&
-        f.departure.airport.location.lon &&
-        f.arrival.airport.location.lat &&
-        f.arrival.airport.location.lon
-    )
-    .map((f) => ({
-      id: f.id,
-      dep: {
-        lat: f.departure.airport.location.lat,
-        lng: f.departure.airport.location.lon,
-        iata: f.departure.airport.iata,
-        name: f.departure.airport.name,
-      },
-      arr: {
-        lat: f.arrival.airport.location.lat,
-        lng: f.arrival.airport.location.lon,
-        iata: f.arrival.airport.iata,
-        name: f.arrival.airport.name,
-      },
-    }))
-
   const airports = useMemo(() => {
-    const map = new Map<
-      string,
-      { lat: number; lng: number; iata: string; name: string }
-    >()
+    const byIata = new Map<string, RouteAirport>()
     for (const route of routes) {
-      map.set(route.dep.iata, route.dep)
-      map.set(route.arr.iata, route.arr)
+      byIata.set(route.departure.iata, route.departure)
+      byIata.set(route.arrival.iata, route.arrival)
     }
-    return map
+    return Array.from(byIata.values())
   }, [routes])
-
-  useEffect(() => {
-    if (mapRef.current && airports.size > 0) {
-      const points = Array.from(airports.values()).map(
-        (a) => [a.lat, a.lng] as [number, number]
-      )
-      mapRef.current.fitBounds(points, { padding: [50, 50], maxZoom: 10 })
-    }
-  }, [airports])
 
   return (
     <MapContainer
-      ref={mapRef}
       center={[30, 0]}
       zoom={2}
       minZoom={2}
@@ -131,13 +109,14 @@ export default function FlightMap({ flights }: FlightMapProps) {
         attribution="Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"
       />
       <ZoomControl />
+      <FitBounds airports={airports} />
 
       {routes.map((route) => (
         <Polyline
-          key={route.id}
+          key={`${route.departure.iata}-${route.arrival.iata}`}
           positions={[
-            [route.dep.lat, route.dep.lng],
-            [route.arr.lat, route.arr.lng],
+            [route.departure.location.lat, route.departure.location.lon],
+            [route.arrival.location.lat, route.arrival.location.lon],
           ]}
           pathOptions={{
             color: "#3b82f6",
@@ -147,10 +126,10 @@ export default function FlightMap({ flights }: FlightMapProps) {
         />
       ))}
 
-      {Array.from(airports.values()).map((airport) => (
+      {airports.map((airport) => (
         <CircleMarker
           key={airport.iata}
-          center={[airport.lat, airport.lng]}
+          center={[airport.location.lat, airport.location.lon]}
           radius={5}
           pathOptions={{
             fillColor: "#3b82f6",

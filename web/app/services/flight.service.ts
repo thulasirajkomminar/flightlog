@@ -1,7 +1,12 @@
 import { api } from "~/lib/api"
 import { API_ENDPOINTS } from "~/constants"
 
-import type { Flight, FlightListResponse, FlightStats } from "~/types"
+import type {
+  Flight,
+  FlightListResponse,
+  FlightRoute,
+  FlightStats,
+} from "~/types"
 
 export const flightService = {
   async list(
@@ -27,6 +32,13 @@ export const flightService = {
 
   async stats(): Promise<FlightStats> {
     return api.get<FlightStats>(API_ENDPOINTS.FLIGHTS.STATS)
+  },
+
+  async routes(): Promise<FlightRoute[]> {
+    const data = await api.get<{ routes: FlightRoute[] | null }>(
+      API_ENDPOINTS.FLIGHTS.ROUTES
+    )
+    return data.routes ?? []
   },
 
   async search(

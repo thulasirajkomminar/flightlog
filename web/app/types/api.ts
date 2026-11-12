@@ -77,6 +77,18 @@ export interface FlightListResponse {
   years: number[]
 }
 
+export interface RouteAirport {
+  iata: string
+  name: string
+  location: { lat: number; lon: number }
+}
+
+export interface FlightRoute {
+  departure: RouteAirport
+  arrival: RouteAirport
+  flights: number
+}
+
 export interface FlightStats {
   flights: number
   distance: number

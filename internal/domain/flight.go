@@ -145,6 +145,20 @@ type FlightStats struct {
 	Airlines   int     `json:"airlines"`
 }
 
+// RouteAirport is the airport data needed to draw one end of a route.
+type RouteAirport struct {
+	IATA     string   `json:"iata"`
+	Name     string   `json:"name"`
+	Location Location `json:"location"`
+}
+
+// Route is a distinct departure/arrival pair flown by a user.
+type Route struct {
+	Departure RouteAirport `json:"departure"`
+	Arrival   RouteAirport `json:"arrival"`
+	Flights   int          `json:"flights"`
+}
+
 // GenerateID creates a UUID for the flight if not already set.
 func (f *Flight) GenerateID() {
 	if f.ID == "" {

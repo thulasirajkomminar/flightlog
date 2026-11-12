@@ -46,6 +46,7 @@ type UserFlightRepository interface {
 	Count(ctx context.Context, criteria *domain.FlightSearchCriteria) (int64, error)
 	GetYears(ctx context.Context, userID string) ([]int, error)
 	GetStats(ctx context.Context, userID string) (*domain.FlightStats, error)
+	GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error)
 }
 
 // Provider defines the contract for flight data providers.
@@ -191,6 +192,16 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*domain.FlightSt
 	}
 
 	return stats, nil
+}
+
+// GetRoutes returns the distinct routes a user has flown.
+func (s *Service) GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error) {
+	routes, err := s.userRepo.GetRoutes(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("routes for user %s: %w", userID, err)
+	}
+
+	return routes, nil
 }
 
 // searchCached returns cached flights, refreshing them from the provider first

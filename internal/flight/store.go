@@ -274,6 +274,60 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 	return &stats, nil
 }
 
+// routeRow is the flat result of the routes query.
+type routeRow struct {
+	DepIATA string
+	DepName string
+	DepLat  float64
+	DepLon  float64
+	ArrIATA string
+	ArrName string
+	ArrLat  float64
+	ArrLon  float64
+	Flights int
+}
+
+// GetRoutes returns the distinct routes a user has flown, with the number of
+// landed flights on each. Flights without airport coordinates are left out
+// because they cannot be drawn.
+func (s *UserFlightStore) GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error) {
+	var rows []routeRow
+
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT
+			f.dep_airport_iata AS dep_iata, MAX(f.dep_airport_name) AS dep_name,
+			MAX(f.dep_airport_lat) AS dep_lat, MAX(f.dep_airport_lon) AS dep_lon,
+			f.arr_airport_iata AS arr_iata, MAX(f.arr_airport_name) AS arr_name,
+			MAX(f.arr_airport_lat) AS arr_lat, MAX(f.arr_airport_lon) AS arr_lon,
+			COUNT(*) AS flights
+		FROM flights f
+		JOIN user_flights uf ON uf.flight_id = f.id
+		WHERE uf.user_id = ? AND f.status = ?
+			AND NOT (f.dep_airport_lat = 0 AND f.dep_airport_lon = 0)
+			AND NOT (f.arr_airport_lat = 0 AND f.arr_airport_lon = 0)
+		GROUP BY f.dep_airport_iata, f.arr_airport_iata
+		ORDER BY f.dep_airport_iata, f.arr_airport_iata
+	`, userID, domain.FlightStatusLanded).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	routes := make([]*domain.Route, 0, len(rows))
+	for i := range rows {
+		routes = append(routes, rows[i].toDomain())
+	}
+
+	return routes, nil
+}
+
+func (r *routeRow) toDomain() *domain.Route {
+	return &domain.Route{
+		Departure: domain.RouteAirport{IATA: r.DepIATA, Name: r.DepName, Location: domain.Location{Lat: r.DepLat, Lon: r.DepLon}},
+		Arrival:   domain.RouteAirport{IATA: r.ArrIATA, Name: r.ArrName, Location: domain.Location{Lat: r.ArrLat, Lon: r.ArrLon}},
+		Flights:   r.Flights,
+	}
+}
+
 func applyFilters(query *gorm.DB, criteria *domain.FlightSearchCriteria) *gorm.DB {
 	if criteria.Year > 0 {
 		query = query.Where("CAST(strftime('%Y', flight_date) AS INTEGER) = ?", criteria.Year)

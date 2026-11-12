@@ -263,3 +263,57 @@ func TestRefreshDueMarksCheckedWhenProviderHasNoAnswer(t *testing.T) {
 		t.Errorf("provider calls = %d, want 1 (failed check must not be retried immediately)", provider.calls)
 	}
 }
+
+func TestGetRoutesGroupsLandedFlights(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+	old := time.Now().Add(-time.Hour)
+
+	noCoords := testFlight("KL1004", "2026-01-04", domain.FlightStatusLanded)
+	noCoords.Arrival.Airport = domain.Airport{IATA: "XXX"}
+
+	flights := []*domain.Flight{
+		testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded),
+		testFlight("KL1002", "2026-01-02", domain.FlightStatusLanded),
+		testFlight("KL1003", "2026-01-03", domain.FlightStatusCancelled),
+		noCoords,
+	}
+
+	for _, f := range flights {
+		insertFlight(t, db, f, old)
+
+		err := svc.AddFlight(ctx, "user-1", f.ID)
+		if err != nil {
+			t.Fatalf("AddFlight: %v", err)
+		}
+	}
+
+	routes, err := svc.GetRoutes(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("GetRoutes: %v", err)
+	}
+
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d, want 1 (cancelled and coordinate-less flights excluded)", len(routes))
+	}
+
+	want := domain.Route{
+		Departure: domain.RouteAirport{IATA: "AMS", Name: "Amsterdam Schiphol", Location: domain.Location{Lat: 52.31, Lon: 4.76}},
+		Arrival:   domain.RouteAirport{IATA: "LHR", Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}},
+		Flights:   2,
+	}
+	if *routes[0] != want {
+		t.Errorf("route = %+v, want %+v", *routes[0], want)
+	}
+
+	other, err := svc.GetRoutes(ctx, "user-2")
+	if err != nil {
+		t.Fatalf("GetRoutes: %v", err)
+	}
+
+	if len(other) != 0 {
+		t.Errorf("other user's routes = %d, want 0", len(other))
+	}
+}

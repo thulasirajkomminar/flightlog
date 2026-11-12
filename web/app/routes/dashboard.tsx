@@ -42,7 +42,7 @@ function formatDuration(hours: number): string {
 }
 
 export default function DashboardPage() {
-  const { flights, stats, isLoading } = useDashboardData()
+  const { routes, stats, isLoading } = useDashboardData()
 
   const metrics = stats
     ? [
@@ -104,7 +104,7 @@ export default function DashboardPage() {
                     </div>
                   }
                 >
-                  <FlightMap flights={flights} />
+                  <FlightMap routes={routes} />
                 </Suspense>
               )}
             </div>

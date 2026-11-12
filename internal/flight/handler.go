@@ -244,6 +244,25 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusOK, stats)
 }
 
+// GetRoutes returns the distinct routes the user has flown, for the map.
+func (h *Handler) GetRoutes(w http.ResponseWriter, r *http.Request) {
+	user := api.GetUser(r)
+	if user == nil {
+		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
+
+		return
+	}
+
+	routes, err := h.flightService.GetRoutes(r.Context(), user.UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, map[string]any{"routes": routes})
+}
+
 // ExportFlights returns all user flights as a CSV file download.
 func (h *Handler) ExportFlights(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
