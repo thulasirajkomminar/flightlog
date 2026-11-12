@@ -52,6 +52,13 @@ tasks:
     desc: Run frontend dev server
     cmd: task web:dev
 
+  docs:
+    desc: Serve the documentation site locally with live reload (http://localhost:8001)
+    dir: docs
+    # Port 8001 rather than the mkdocs default of 8000, which editors and other
+    # local tools often occupy.
+    cmd: uv run --locked mkdocs serve --dev-addr localhost:8001
+
   dev:
     desc: Run API and frontend locally
     deps: [setup]
