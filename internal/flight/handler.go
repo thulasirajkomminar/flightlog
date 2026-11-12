@@ -23,6 +23,8 @@ const (
 	errUnauthorized     = "unauthorized"
 	errInvalidDate      = "invalid date format, expected YYYY-MM-DD"
 	errInternal         = "internal server error"
+
+	errProviderUnavailable = "flight data provider is unavailable, please try again later"
 )
 
 // ErrInvalidStatus is returned when an unknown flight status is provided.
@@ -77,7 +79,7 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 
 	flights, err := h.flightService.SearchFlights(r.Context(), flightNumber, date)
 	if err != nil {
-		api.RespondError(w, http.StatusNotFound, "no flights found")
+		respondSearchError(w, err)
 
 		return
 	}
@@ -86,6 +88,18 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 		"flights": flights,
 		"count":   len(flights),
 	})
+}
+
+// respondSearchError tells "the flight does not exist" apart from "the flight
+// data provider could not be reached", so quota or outage problems are visible.
+func respondSearchError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrNoFlightsFound) {
+		api.RespondError(w, http.StatusNotFound, "no flights found")
+
+		return
+	}
+
+	api.RespondError(w, http.StatusBadGateway, errProviderUnavailable)
 }
 
 // AddFlight links a cached flight to the authenticated user.
