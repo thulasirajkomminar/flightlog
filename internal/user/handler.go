@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -44,7 +45,10 @@ type UpdateProfileRequest struct {
 	Name  string `json:"name"  example:"Thulasiraj Komminar"`
 }
 
-const defaultTokenExpiry = 24 * time.Hour
+const (
+	defaultTokenExpiry = 24 * time.Hour
+	authCookieName     = "flightlog_token"
+)
 
 // Handler handles auth and profile HTTP endpoints.
 type Handler struct {
@@ -87,7 +91,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, defaultTokenExpiry)
+	setAuthCookie(w, r, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusCreated, AuthResponse{
 		Token: token,
@@ -128,7 +132,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, defaultTokenExpiry)
+	setAuthCookie(w, r, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
@@ -137,30 +141,33 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout clears the auth cookie.
-func (h *Handler) Logout(w http.ResponseWriter, _ *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "flightlog_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	setAuthCookie(w, r, "", -time.Second)
 
 	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
-func setAuthCookie(w http.ResponseWriter, token string, expiry time.Duration) {
+// setAuthCookie sets the session cookie; a negative expiry deletes it. The
+// cookie is marked Secure only when the request arrived over HTTPS, because
+// browsers drop Secure cookies on plain-HTTP origins other than localhost,
+// which would make login fail silently on a LAN deployment.
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string, expiry time.Duration) {
+	//nolint:gosec // G124: Secure is set whenever the request used HTTPS; forcing it breaks plain-HTTP LAN installs.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "flightlog_token",
+		Name:     authCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(expiry.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// isHTTPS reports whether the client reached the server over HTTPS, either
+// directly or through a TLS-terminating reverse proxy.
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // GetProfile returns the authenticated user's profile.
