@@ -109,5 +109,7 @@ docker compose up -d
 
 The database migrates itself on startup — there's no separate migration step to run.
 
+Before upgrading, check the [release notes](../release-notes.md) for anything that needs your attention, and back up your data directory.
+
 !!! note "Pin to a version if you prefer"
     For production-ish setups, replace `:latest` with the specific version tag you've tested. You'll see the available tags on the [GitHub Container Registry page](https://github.com/thulasirajkomminar/flightlog/pkgs/container/flightlog).

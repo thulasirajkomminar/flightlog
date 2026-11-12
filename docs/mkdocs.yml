@@ -107,3 +107,4 @@ nav:
       - Search & add flights: usage/search-and-add.md
       - My flights: usage/my-flights.md
       - Import & export: usage/import-export.md
+  - Release notes: release-notes.md
