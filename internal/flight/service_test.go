@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,5 +359,43 @@ func TestGetStatsCountsOnlyLandedFlights(t *testing.T) {
 
 	if diff := got.FlightTime - want.FlightTime; diff > 0.001 || diff < -0.001 {
 		t.Errorf("flight time = %v, want %v", got.FlightTime, want.FlightTime)
+	}
+}
+
+func TestListFlightsPagesAreStableForSameDayFlights(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+	morning := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+
+	for i, number := range []string{"KL1001", "KL1003", "KL1005", "KL1007"} {
+		f := testFlight(number, "2026-01-01", domain.FlightStatusLanded)
+		dep := morning.Add(time.Duration(i) * time.Hour)
+		f.Departure.ScheduledTime.UTC = &dep
+		insertFlight(t, db, f, time.Now())
+
+		err := svc.AddFlight(ctx, "user-1", f.ID)
+		if err != nil {
+			t.Fatalf("AddFlight: %v", err)
+		}
+	}
+
+	var got []string
+
+	for _, offset := range []int{0, 2} {
+		page, total, err := svc.ListFlights(ctx, &domain.FlightSearchCriteria{UserID: "user-1", Limit: 2, Offset: offset})
+		if err != nil || total != 4 {
+			t.Fatalf("ListFlights: total = %d, err = %v", total, err)
+		}
+
+		for _, f := range page {
+			got = append(got, f.Number)
+		}
+	}
+
+	want := "KL 1007,KL 1005,KL 1003,KL 1001"
+	if strings.Join(got, ",") != want {
+		t.Errorf("paged order = %v, want %s (latest departure first, no repeats)", got, want)
 	}
 }

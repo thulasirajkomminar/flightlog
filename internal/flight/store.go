@@ -104,6 +104,10 @@ func (s *CacheStore) FindByNumberAndDate(ctx context.Context, flightNumber, flig
 	return flights, nil
 }
 
+// newestFirst orders flights by date, then departure time. The ID tie-breaker
+// keeps the order stable so pages never overlap or skip same-day flights.
+const newestFirst = "flights.flight_date DESC, flights.dep_scheduled_utc DESC, flights.id DESC"
+
 // UserFlightStore manages the user-flight join table.
 type UserFlightStore struct {
 	db *gorm.DB
@@ -168,7 +172,7 @@ func (s *UserFlightStore) List(ctx context.Context, criteria *domain.FlightSearc
 
 	query = applyFilters(query, criteria)
 	query = applyPagination(query, criteria)
-	query = query.Order("flights.flight_date DESC")
+	query = query.Order(newestFirst)
 
 	var flights []*domain.Flight
 
@@ -187,7 +191,7 @@ func (s *UserFlightStore) ListAll(ctx context.Context, userID string) ([]*domain
 	err := s.db.WithContext(ctx).Model(&domain.Flight{}).
 		Joins("JOIN user_flights ON user_flights.flight_id = flights.id").
 		Where("user_flights.user_id = ?", userID).
-		Order("flights.flight_date DESC").
+		Order(newestFirst).
 		Find(&flights).Error
 	if err != nil {
 		return nil, err
