@@ -24,6 +24,7 @@ const (
 	errInternal         = "internal server error"
 
 	errProviderUnavailable = "flight data provider is unavailable, please try again later"
+	errProviderQuota       = "the flight data API quota is used up for now, please try again later"
 )
 
 // ErrInvalidStatus is returned when an unknown flight status is provided.
@@ -87,6 +88,12 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 func respondSearchError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrNoFlightsFound) {
 		api.RespondError(w, http.StatusNotFound, "no flights found")
+
+		return
+	}
+
+	if errors.Is(err, domain.ErrProviderQuota) {
+		api.RespondError(w, http.StatusServiceUnavailable, errProviderQuota)
 
 		return
 	}

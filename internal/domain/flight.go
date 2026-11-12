@@ -147,6 +147,19 @@ type FlightStats struct {
 	Airlines   int     `json:"airlines"`
 }
 
+// FlightMiss records that the provider had no flight for a number and date,
+// so the same question is not asked again straight away.
+type FlightMiss struct {
+	FlightNumber string    `gorm:"primaryKey;column:flight_number"`
+	FlightDate   string    `gorm:"primaryKey;column:flight_date"`
+	CheckedAt    time.Time `gorm:"column:checked_at;not null"`
+}
+
+// TableName overrides the GORM table name.
+func (*FlightMiss) TableName() string {
+	return "flight_misses"
+}
+
 // RouteAirport is the airport data needed to draw one end of a route.
 type RouteAirport struct {
 	IATA     string   `json:"iata"`

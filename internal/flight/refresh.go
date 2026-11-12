@@ -94,6 +94,13 @@ func (s *Service) RunRefresher(ctx context.Context) {
 // RefreshDue re-fetches flights that are due for a status check and returns
 // how many were updated with provider data.
 func (s *Service) RefreshDue(ctx context.Context, now time.Time) int {
+	// Keep what is left of a low quota for searches people start themselves.
+	if !s.provider.BackgroundAllowed() {
+		s.log.Debug("skipping status refresh: provider quota is low or exhausted")
+
+		return 0
+	}
+
 	due, err := s.cache.FindRefreshDue(ctx, newRefreshDue(now))
 	if err != nil {
 		s.log.Error("failed to find flights due for refresh", err)

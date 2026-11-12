@@ -31,9 +31,11 @@ const (
 	retryBackoffBase = 2 * time.Second
 )
 
-// retryTransport wraps an http.RoundTripper and retries on 429 with exponential backoff.
+// retryTransport wraps an http.RoundTripper, retries on 429 with exponential
+// backoff, and reports each final response to the quota tracker.
 type retryTransport struct {
-	base http.RoundTripper
+	base  http.RoundTripper
+	quota *quota
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -44,6 +46,8 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxRetries {
+			t.quota.observe(resp.StatusCode, resp.Header, time.Now())
+
 			return resp, nil
 		}
 
@@ -65,6 +69,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Provider implements flight.Provider.
 type Provider struct {
 	client *api.Client
+	quota  *quota
 	log    *logger.ComponentLogger
 
 	// Live-tracked airports, from a free endpoint, kept in memory.
@@ -80,9 +85,10 @@ const (
 
 // NewProvider creates a Provider.
 func NewProvider(apiKey string) (*Provider, error) {
+	q := &quota{}
 	httpClient := &http.Client{
 		Timeout:   defaultTimeout,
-		Transport: &retryTransport{base: http.DefaultTransport},
+		Transport: &retryTransport{base: http.DefaultTransport, quota: q},
 	}
 
 	client, err := api.NewClient(defaultBaseURL,
@@ -98,7 +104,7 @@ func NewProvider(apiKey string) (*Provider, error) {
 		return nil, fmt.Errorf("failed to create aerodatabox client: %w", err)
 	}
 
-	return &Provider{client: client, log: logger.NewComponentLogger("aerodatabox")}, nil
+	return &Provider{client: client, quota: q, log: logger.NewComponentLogger("aerodatabox")}, nil
 }
 
 // coverageTTL is how long the list of live-tracked airports is reused. A
@@ -133,6 +139,12 @@ func (p *Provider) LiveAirports(ctx context.Context) (map[string]struct{}, error
 	return airports, nil
 }
 
+// BackgroundAllowed reports whether non-essential calls, such as status
+// refreshes, may spend API quota right now.
+func (p *Provider) BackgroundAllowed() bool {
+	return p.quota.allowBackground(time.Now())
+}
+
 // GetProviderName returns the provider name.
 func (p *Provider) GetProviderName() string {
 	return "aerodatabox"
@@ -141,6 +153,12 @@ func (p *Provider) GetProviderName() string {
 // SearchFlights searches for flights by IATA flight number and date
 // (YYYY-MM-DD). An empty date means today.
 func (p *Provider) SearchFlights(ctx context.Context, flightNumber, dateStr string) ([]*domain.Flight, error) {
+	// While the API is refusing requests, answer at once instead of spending
+	// a call (and several retries) on a certain failure.
+	if p.quota.blocked(time.Now()) {
+		return nil, domain.ErrProviderQuota
+	}
+
 	if dateStr == "" {
 		dateStr = time.Now().UTC().Format("2006-01-02")
 	}
@@ -523,6 +541,10 @@ func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, dat
 			zap.Int("status", resp.StatusCode),
 			zap.String("body", string(body)),
 		)
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, domain.ErrProviderQuota
+		}
 
 		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
 	}

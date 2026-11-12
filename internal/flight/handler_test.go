@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thulasirajkomminar/flightlog/internal/api"
+	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
 
 func searchRequest(t *testing.T, h *Handler, query string) *httptest.ResponseRecorder {
@@ -32,6 +33,7 @@ func TestSearchFlightsErrorStatus(t *testing.T) {
 	}{
 		{"provider knows no such flight", &fakeProvider{}, http.StatusNotFound, "no flights found"},
 		{"provider failure is not reported as not found", &fakeProvider{err: errProviderDown}, http.StatusBadGateway, "provider is unavailable"},
+		{"exhausted quota is named", &fakeProvider{err: domain.ErrProviderQuota}, http.StatusServiceUnavailable, "quota is used up"},
 	}
 
 	for _, tt := range tests {

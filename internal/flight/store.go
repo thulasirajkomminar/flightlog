@@ -66,6 +66,28 @@ func (s *CacheStore) FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*do
 	return flights, nil
 }
 
+// FindMiss returns when the provider last had no flight for a number and
+// date, and whether there is such a record.
+func (s *CacheStore) FindMiss(ctx context.Context, flightNumber, flightDate string) (time.Time, bool) {
+	var miss domain.FlightMiss
+
+	err := s.db.WithContext(ctx).
+		Where("flight_number = ? AND flight_date = ?", flightNumber, flightDate).
+		First(&miss).Error
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	return miss.CheckedAt, true
+}
+
+// SaveMiss records that the provider had no flight for a number and date.
+func (s *CacheStore) SaveMiss(ctx context.Context, flightNumber, flightDate string, checkedAt time.Time) error {
+	miss := domain.FlightMiss{FlightNumber: flightNumber, FlightDate: flightDate, CheckedAt: checkedAt}
+
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&miss).Error
+}
+
 // FindByRoute retrieves a cached flight by number, date, and route.
 func (s *CacheStore) FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error) {
 	var flight domain.Flight

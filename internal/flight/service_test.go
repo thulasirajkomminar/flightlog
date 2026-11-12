@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,10 +30,23 @@ type fakeProvider struct {
 	flights []*domain.Flight
 	err     error
 	calls   int
+	// noBackground makes the provider report a low quota.
+	noBackground bool
+	// gate, when set, blocks each search until it is closed.
+	gate chan struct{}
+	mu   sync.Mutex
 }
 
+func (p *fakeProvider) BackgroundAllowed() bool { return !p.noBackground }
+
 func (p *fakeProvider) SearchFlights(_ context.Context, _, _ string) ([]*domain.Flight, error) {
+	p.mu.Lock()
 	p.calls++
+	p.mu.Unlock()
+
+	if p.gate != nil {
+		<-p.gate
+	}
 
 	if p.err != nil {
 		return nil, p.err
@@ -64,7 +78,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{})
+	err = db.AutoMigrate(&domain.Flight{}, &domain.FlightMiss{}, &domain.UserFlight{}, &domain.User{})
 	if err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -552,5 +566,100 @@ func TestAddAndDeleteFlightErrors(t *testing.T) {
 
 	if links != 0 {
 		t.Errorf("user_flights rows = %d, want 0", links)
+	}
+}
+
+func TestSearchFlightsRemembersMisses(t *testing.T) {
+	t.Parallel()
+
+	provider := &fakeProvider{}
+	svc, db := newTestService(t, provider)
+	ctx := context.Background()
+	lastYear := time.Now().UTC().AddDate(-1, 0, 0).Format(time.DateOnly)
+
+	for range 3 {
+		_, err := svc.SearchFlights(ctx, "KL1001", lastYear)
+		if !errors.Is(err, ErrNoFlightsFound) {
+			t.Fatalf("err = %v, want ErrNoFlightsFound", err)
+		}
+	}
+
+	if provider.calls != 1 {
+		t.Errorf("provider calls = %d, want 1: the miss must be remembered", provider.calls)
+	}
+
+	// Another flight number is a different question.
+	_, _ = svc.SearchFlights(ctx, "KL1003", lastYear)
+
+	if provider.calls != 2 {
+		t.Errorf("provider calls = %d, want 2", provider.calls)
+	}
+
+	// Once the remembered answer is too old, the provider is asked again.
+	err := db.Model(&domain.FlightMiss{}).Where("flight_number = ?", "KL1001").
+		Update("checked_at", time.Now().Add(-pastMissTTL-time.Hour)).Error
+	if err != nil {
+		t.Fatalf("age miss: %v", err)
+	}
+
+	provider.flights = []*domain.Flight{testFlight("KL1001", lastYear, domain.FlightStatusLanded)}
+
+	got, err := svc.SearchFlights(ctx, "KL1001", lastYear)
+	if err != nil || len(got) != 1 || provider.calls != 3 {
+		t.Errorf("after expiry: %d flights, err %v, %d calls; want 1 flight from a third call", len(got), err, provider.calls)
+	}
+}
+
+func TestSearchFlightsSharesConcurrentLookups(t *testing.T) {
+	t.Parallel()
+
+	today := time.Now().UTC().Format(time.DateOnly)
+	provider := &fakeProvider{
+		flights: []*domain.Flight{testFlight("KL1001", today, domain.FlightStatusScheduled)},
+		gate:    make(chan struct{}),
+	}
+	svc, _ := newTestService(t, provider)
+
+	const searches = 5
+
+	var wg sync.WaitGroup
+
+	results := make([]int, searches)
+
+	for i := range searches {
+		wg.Go(func() {
+			flights, _ := svc.SearchFlights(context.Background(), "KL1001", today)
+			results[i] = len(flights)
+		})
+	}
+
+	// Let every search reach the provider gate, then open it.
+	time.Sleep(100 * time.Millisecond)
+	close(provider.gate)
+	wg.Wait()
+
+	if provider.calls != 1 {
+		t.Errorf("provider calls = %d, want 1 shared by %d identical searches", provider.calls, searches)
+	}
+
+	for i, n := range results {
+		if n != 1 {
+			t.Errorf("search %d got %d flights, want 1", i, n)
+		}
+	}
+}
+
+func TestRefreshDueStopsWhenQuotaIsLow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	provider := &fakeProvider{noBackground: true}
+	svc, db := newTestService(t, provider)
+	arrivedFlight(t, svc, db, now, "KL1001")
+
+	svc.RefreshDue(context.Background(), now)
+
+	if provider.calls != 0 {
+		t.Errorf("provider calls = %d, want 0 while the quota is low", provider.calls)
 	}
 }

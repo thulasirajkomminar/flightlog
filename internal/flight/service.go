@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
@@ -14,6 +15,8 @@ import (
 
 // ErrNoFlightsFound is returned when no flights match.
 var ErrNoFlightsFound = errors.New("no flights found")
+
+var errUnexpectedResult = errors.New("unexpected provider result type")
 
 const (
 	logKeyFlightNumber = "flight_number"
@@ -25,6 +28,10 @@ const (
 	// A search only re-fetches flights dated within this window around today.
 	searchRefreshDaysBefore = 3
 	searchRefreshDaysAhead  = 1
+
+	// How long a "no such flight" answer from the provider is reused.
+	pastMissTTL     = 7 * 24 * time.Hour
+	upcomingMissTTL = 6 * time.Hour
 )
 
 // CacheRepository manages cached flight data from providers.
@@ -33,6 +40,8 @@ type CacheRepository interface {
 	Update(ctx context.Context, flight *domain.Flight) error
 	RecordStatusCheck(ctx context.Context, flightID string, checks int) error
 	FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*domain.Flight, error)
+	FindMiss(ctx context.Context, flightNumber, flightDate string) (time.Time, bool)
+	SaveMiss(ctx context.Context, flightNumber, flightDate string, checkedAt time.Time) error
 	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
 	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
 }
@@ -55,6 +64,8 @@ type Provider interface {
 	// SearchFlights returns the flights with the given IATA flight number
 	// departing on date (YYYY-MM-DD).
 	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
+	// BackgroundAllowed reports whether non-essential calls may spend quota.
+	BackgroundAllowed() bool
 	GetProviderName() string
 }
 
@@ -70,7 +81,9 @@ type Service struct {
 	provider   Provider
 	backfiller CacheBackfiller
 	coverage   LiveCoverage
-	log        *logger.ComponentLogger
+	// inflight shares one provider call between identical concurrent searches.
+	inflight singleflight.Group
+	log      *logger.ComponentLogger
 }
 
 // NewService creates a Service.
@@ -99,12 +112,16 @@ func (s *Service) SearchFlights(ctx context.Context, flightNumber, date string) 
 		return s.searchCached(ctx, flights, flightNumber, date, now), nil
 	}
 
+	if s.recentlyMissed(ctx, flightNumber, date, now) {
+		return nil, fmt.Errorf("%w for %s on %s (remembered)", ErrNoFlightsFound, flightNumber, date)
+	}
+
 	s.log.Debug("cache miss, fetching from provider",
 		zap.String(logKeyFlightNumber, flightNumber),
 		zap.String(logKeyDate, date),
 	)
 
-	return s.fetchFromProvider(ctx, flightNumber, date)
+	return s.fetchShared(ctx, flightNumber, date)
 }
 
 // ListFlights returns a user's flights matching criteria.
@@ -212,7 +229,7 @@ func (s *Service) GetRoutes(ctx context.Context, userID string) ([]*domain.Route
 // when their status may be out of date. A failed refresh falls back to the cache.
 func (s *Service) searchCached(ctx context.Context, cached []*domain.Flight, flightNumber, date string, now time.Time) []*domain.Flight {
 	if anyStale(cached, now) {
-		fresh, err := s.fetchFromProvider(ctx, flightNumber, date)
+		fresh, err := s.fetchShared(ctx, flightNumber, date)
 		if err == nil {
 			return fresh
 		}
@@ -246,6 +263,43 @@ func anyStale(flights []*domain.Flight, now time.Time) bool {
 	return false
 }
 
+// recentlyMissed reports whether the provider said "no such flight" for this
+// number and date recently enough that asking again would waste a call.
+func (s *Service) recentlyMissed(ctx context.Context, flightNumber, date string, now time.Time) bool {
+	checkedAt, found := s.cache.FindMiss(ctx, flightNumber, date)
+
+	return found && now.Sub(checkedAt) < missTTL(date, now)
+}
+
+// missTTL is how long a "no such flight" answer is trusted. A past date will
+// not gain a flight, so it is trusted for long; today's and future schedules
+// can still be published, so those are asked again sooner.
+func missTTL(date string, now time.Time) time.Duration {
+	if date < now.AddDate(0, 0, -1).Format(time.DateOnly) {
+		return pastMissTTL
+	}
+
+	return upcomingMissTTL
+}
+
+// fetchShared fetches from the provider, letting identical searches that
+// arrive at the same time (a double click, two browser tabs) share one call.
+func (s *Service) fetchShared(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+	result, err, _ := s.inflight.Do(flightNumber+"|"+date, func() (any, error) {
+		return s.fetchFromProvider(ctx, flightNumber, date)
+	})
+	if err != nil {
+		return nil, err //nolint:wrapcheck // already wrapped by fetchFromProvider
+	}
+
+	flights, ok := result.([]*domain.Flight)
+	if !ok {
+		return nil, errUnexpectedResult
+	}
+
+	return flights, nil
+}
+
 func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
 	providerFlights, err := s.provider.SearchFlights(ctx, flightNumber, date)
 	if err != nil {
@@ -258,6 +312,12 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	}
 
 	if len(providerFlights) == 0 {
+		// Remember the answer; failing to store it only costs a later call.
+		saveErr := s.cache.SaveMiss(ctx, flightNumber, date, time.Now().UTC())
+		if saveErr != nil {
+			s.log.Warn("failed to remember missing flight", zap.Error(saveErr))
+		}
+
 		return nil, fmt.Errorf("%w for %s on %s", ErrNoFlightsFound, flightNumber, date)
 	}
 

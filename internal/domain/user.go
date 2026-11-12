@@ -15,6 +15,9 @@ var (
 	ErrValidation         = errors.New("validation error")
 	ErrFlightAlreadyAdded = errors.New("flight already added to your collection")
 	ErrFlightNotFound     = errors.New("flight not found")
+	// ErrProviderQuota means the flight data provider is refusing requests
+	// because the API quota is used up.
+	ErrProviderQuota = errors.New("flight data quota is used up")
 )
 
 // User represents a registered user entity.
