@@ -19,6 +19,8 @@ You get a world map of your trips, totals you can show off (distance, hours in t
 
 ![Flightlog dashboard](assets/screenshots/02-dashboard-page.png)
 
+![Flightlog dashboard statistics](assets/screenshots/02-dashboard-page_2.png)
+
 ## What you can do with it
 
 <div class="grid cards" markdown>

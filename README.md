@@ -19,6 +19,8 @@ A simple app to log and manage your flight history.
 
 ![Dashboard](docs/content/assets/screenshots/02-dashboard-page.png)
 
+![Dashboard statistics](docs/content/assets/screenshots/02-dashboard-page_2.png)
+
 ![Search and Add Flight](docs/content/assets/screenshots/03-search-and-add-flight-page.png)
 
 ![My Flights](docs/content/assets/screenshots/04-my-flights-page.png)

@@ -38,6 +38,8 @@ These update in real time as you add or delete flights — there's no "refresh s
 
 Below the tiles, the same flights are shown from a few more angles:
 
+![A closer look at your flights](../assets/screenshots/02-dashboard-page_2.png)
+
 - **Four quick facts** — how many times around the Earth your distance adds up to, how far that is on the way to the Moon, how many **countries** you've flown to or from, and your **longest flight**.
 - **When you flew** — a calendar with a row per year and a square per month. The brighter the square, the more flights that month; hover (or tab to) a square to see the number. Each row ends with that year's flights and distance.
 - **Top routes** — the five routes you fly most. Both directions count as one route, so a round trip is two flights on the same route.
