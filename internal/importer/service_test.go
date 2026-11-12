@@ -173,7 +173,7 @@ func waitForJob(t *testing.T, svc *Service, userID string, done func(Job) bool) 
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		job, ok := svc.ImportStatus(userID)
+		job, ok := svc.ImportStatus(t.Context(), userID)
 		if ok && done(job) {
 			return job
 		}
@@ -224,7 +224,7 @@ func TestImportJobsArePerUserAndRestartable(t *testing.T) {
 	svc := NewService(nil, &fakeLinker{}, &fakeCache{}, nil)
 	entries := []ImportEntry{importEntry("KL1001")}
 
-	_, ok := svc.ImportStatus("user-1")
+	_, ok := svc.ImportStatus(t.Context(), "user-1")
 	if ok {
 		t.Fatal("status before any import: want none")
 	}
@@ -236,7 +236,7 @@ func TestImportJobsArePerUserAndRestartable(t *testing.T) {
 
 	waitForJob(t, svc, "user-1", func(j Job) bool { return j.State == JobCompleted })
 
-	_, ok = svc.ImportStatus("user-2")
+	_, ok = svc.ImportStatus(t.Context(), "user-2")
 	if ok {
 		t.Error("user-2 sees user-1's job")
 	}

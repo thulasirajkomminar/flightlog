@@ -71,7 +71,7 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 // Status returns the user's running or most recently finished import, or 204
 // when there is none.
 func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
-	job, ok := h.service.ImportStatus(api.GetUser(r).UserID)
+	job, ok := h.service.ImportStatus(r.Context(), api.GetUser(r).UserID)
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
 

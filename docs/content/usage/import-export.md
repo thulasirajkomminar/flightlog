@@ -56,7 +56,7 @@ For a Flightlog → Flightlog import this step doesn't exist — your own export
 
 ### 4. Import
 
-Hit the button, watch the count tick up. The import runs on the server, so you can close the dialog — or the browser tab — and it keeps going; the **Import** button shows the progress, and it picks up where it was if you reload the page. When it's done you get a summary, and the new flights show up in My Flights and on the Dashboard right away.
+Hit the button, watch the count tick up. The import runs on the server, so you can close the dialog — or the browser tab — and it keeps going; the **Import** button shows the progress, and it picks up where it was if you reload the page. Even a server restart doesn't lose it: the import carries on from the flight it had reached. When it's done you get a summary, and the new flights show up in My Flights and on the Dashboard right away.
 
 Only one import runs at a time per account. With **Enrich** on, allow roughly a second per recent flight.
 

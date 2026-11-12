@@ -5,17 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 )
 
-// jobRetention is how long a finished job stays available for status checks.
-const jobRetention = time.Hour
-
 // ErrImportRunning is returned when a user starts an import while their
 // previous one is still in progress.
 var ErrImportRunning = errors.New("an import is already running")
+
+var errJobPanic = errors.New("panic")
 
 // JobState is the lifecycle state of a background import.
 type JobState string
@@ -32,68 +30,89 @@ type Job struct {
 	Total     int           `json:"total"`
 	Processed int           `json:"processed"`
 	Result    *ImportResult `json:"result,omitempty"`
-
-	finishedAt time.Time
 }
 
-// jobStore keeps the latest import job per user in memory. Jobs do not
-// survive a restart; flights imported before the restart are kept.
-type jobStore struct {
+// PendingJob is everything needed to run, or carry on with, an import.
+type PendingJob struct {
+	UserID  string
+	Source  string
+	Enrich  bool
+	Entries []ImportEntry
+	// Processed entries are skipped when the job is resumed, and Result holds
+	// the outcome counted so far.
+	Processed int
+	Result    *ImportResult
+}
+
+// JobRepository keeps the latest import job of each user.
+type JobRepository interface {
+	// Start registers a new running job, replacing a finished one. It returns
+	// ErrImportRunning while the user's previous job is still running.
+	Start(ctx context.Context, job *PendingJob) error
+	// Progress records how far a running job has got.
+	Progress(ctx context.Context, userID string, processed int, result *ImportResult) error
+	// Finish marks a job as completed with its final result.
+	Finish(ctx context.Context, userID string, result *ImportResult) error
+	// Get returns the user's latest job.
+	Get(ctx context.Context, userID string) (Job, bool)
+	// Interrupted returns jobs that were still running when the process last
+	// stopped, so they can be resumed.
+	Interrupted(ctx context.Context) ([]*PendingJob, error)
+}
+
+// memoryJobs keeps jobs in memory. Jobs do not survive a restart; it is the
+// default until WithJobRepository supplies a durable store.
+type memoryJobs struct {
 	mu   sync.Mutex
 	jobs map[string]*Job
 }
 
-func newJobStore() *jobStore {
-	return &jobStore{jobs: make(map[string]*Job)}
+func newMemoryJobs() *memoryJobs {
+	return &memoryJobs{jobs: make(map[string]*Job)}
 }
 
-// start registers a new running job for the user, replacing a finished one.
-func (s *jobStore) start(userID string, total int, now time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (m *memoryJobs) Start(_ context.Context, job *PendingJob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for id, job := range s.jobs {
-		if job.State == JobCompleted && now.Sub(job.finishedAt) > jobRetention {
-			delete(s.jobs, id)
-		}
-	}
-
-	if job, ok := s.jobs[userID]; ok && job.State == JobRunning {
+	if existing, ok := m.jobs[job.UserID]; ok && existing.State == JobRunning {
 		return ErrImportRunning
 	}
 
-	s.jobs[userID] = &Job{State: JobRunning, Total: total}
+	m.jobs[job.UserID] = &Job{State: JobRunning, Total: len(job.Entries)}
 
 	return nil
 }
 
-func (s *jobStore) progress(userID string, processed int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (m *memoryJobs) Progress(_ context.Context, userID string, processed int, _ *ImportResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if job, ok := s.jobs[userID]; ok {
+	if job, ok := m.jobs[userID]; ok {
 		job.Processed = processed
 	}
+
+	return nil
 }
 
-func (s *jobStore) finish(userID string, result *ImportResult, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (m *memoryJobs) Finish(_ context.Context, userID string, result *ImportResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if job, ok := s.jobs[userID]; ok {
+	if job, ok := m.jobs[userID]; ok {
 		job.State = JobCompleted
 		job.Processed = job.Total
 		job.Result = result
-		job.finishedAt = now
 	}
+
+	return nil
 }
 
-// get returns a copy of the user's latest job.
-func (s *jobStore) get(userID string) (Job, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (m *memoryJobs) Get(_ context.Context, userID string) (Job, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	job, ok := s.jobs[userID]
+	job, ok := m.jobs[userID]
 	if !ok {
 		return Job{}, false
 	}
@@ -101,41 +120,82 @@ func (s *jobStore) get(userID string) (Job, bool) {
 	return *job, true
 }
 
+func (*memoryJobs) Interrupted(context.Context) ([]*PendingJob, error) {
+	return nil, nil
+}
+
+// WithJobRepository makes import jobs durable, so a running import survives a
+// restart (see ResumeInterrupted).
+func (s *Service) WithJobRepository(jobs JobRepository) *Service {
+	s.jobs = jobs
+
+	return s
+}
+
 // StartImport begins importing entries in the background and returns the new
 // job. Progress is available through ImportStatus. ctx must outlive the
 // request that started the import.
 func (s *Service) StartImport(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) (Job, error) {
-	err := s.jobs.start(userID, len(entries), time.Now())
+	pending := &PendingJob{UserID: userID, Source: source, Enrich: enrich, Entries: entries}
+
+	err := s.jobs.Start(ctx, pending)
 	if err != nil {
-		return Job{}, err
+		return Job{}, fmt.Errorf("start import job: %w", err)
 	}
 
-	go s.runJob(ctx, userID, entries, source, enrich)
+	go s.runJob(ctx, pending)
 
-	job, _ := s.jobs.get(userID)
-
-	return job, nil
+	return Job{State: JobRunning, Total: len(entries)}, nil
 }
 
 // ImportStatus returns the user's running or most recently finished import.
-func (s *Service) ImportStatus(userID string) (Job, bool) {
-	return s.jobs.get(userID)
+func (s *Service) ImportStatus(ctx context.Context, userID string) (Job, bool) {
+	return s.jobs.Get(ctx, userID)
 }
 
-func (s *Service) runJob(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) {
+// ResumeInterrupted carries on with imports that were still running when the
+// server last stopped, from the entry they had reached. It returns how many
+// jobs were resumed.
+func (s *Service) ResumeInterrupted(ctx context.Context) int {
+	pending, err := s.jobs.Interrupted(ctx)
+	if err != nil {
+		s.log.Error("failed to load interrupted imports", err)
+
+		return 0
+	}
+
+	for _, job := range pending {
+		s.log.Info("resuming interrupted import",
+			zap.String(logKeyUserID, job.UserID), zap.Int("processed", job.Processed), zap.Int("total", len(job.Entries)))
+
+		go s.runJob(ctx, job)
+	}
+
+	return len(pending)
+}
+
+func (s *Service) runJob(ctx context.Context, job *PendingJob) {
 	// A panic here would take the whole server down; fail the job instead.
 	defer func() {
 		if r := recover(); r != nil {
-			s.log.Error("import job panicked", fmt.Errorf("%w: %v", errJobPanic, r), zap.String("user_id", userID))
-			s.jobs.finish(userID, &ImportResult{Total: len(entries), Failed: len(entries)}, time.Now())
+			s.log.Error("import job panicked", fmt.Errorf("%w: %v", errJobPanic, r), zap.String(logKeyUserID, job.UserID))
+			s.finishJob(ctx, job.UserID, &ImportResult{Total: len(job.Entries), Failed: len(job.Entries)})
 		}
 	}()
 
-	result := s.run(ctx, userID, entries, source, enrich, func(processed int) {
-		s.jobs.progress(userID, processed)
+	result := s.run(ctx, job, func(processed int, soFar *ImportResult) {
+		err := s.jobs.Progress(ctx, job.UserID, processed, soFar)
+		if err != nil {
+			s.log.Warn("failed to record import progress", zap.Error(err))
+		}
 	})
 
-	s.jobs.finish(userID, result, time.Now())
+	s.finishJob(ctx, job.UserID, result)
 }
 
-var errJobPanic = errors.New("panic")
+func (s *Service) finishJob(ctx context.Context, userID string, result *ImportResult) {
+	err := s.jobs.Finish(ctx, userID, result)
+	if err != nil {
+		s.log.Error("failed to record finished import", err, zap.String(logKeyUserID, userID))
+	}
+}

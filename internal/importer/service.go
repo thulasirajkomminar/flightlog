@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	logKeyUserID        = "user_id"
 	providerDaysLimit   = 365
 	searchThrottleDelay = 1 * time.Second
 )
@@ -78,7 +79,7 @@ type Service struct {
 	linker   FlightLinker
 	cacher   FlightCacher
 	airports AirportLookup
-	jobs     *jobStore
+	jobs     JobRepository
 	log      *logger.ComponentLogger
 }
 
@@ -95,7 +96,7 @@ func NewService(
 		linker:   linker,
 		cacher:   cacher,
 		airports: airports,
-		jobs:     newJobStore(),
+		jobs:     newMemoryJobs(),
 		log:      logger.NewComponentLogger("importer"),
 	}
 
@@ -179,23 +180,31 @@ type importOptions struct {
 
 // Import processes parsed entries: deduplicates, optionally enriches from the provider, and links to the user.
 func (s *Service) Import(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) *ImportResult {
-	return s.run(ctx, userID, entries, source, enrich, func(int) {})
+	job := &PendingJob{UserID: userID, Source: source, Enrich: enrich, Entries: entries}
+
+	return s.run(ctx, job, func(int, *ImportResult) {})
 }
 
-// run imports entries one by one, reporting how many have been processed.
-func (s *Service) run(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool, onProgress func(processed int)) *ImportResult {
-	result := &ImportResult{Total: len(entries)}
+// run imports a job's entries one by one, starting after those already
+// processed, and reports progress after each entry.
+func (s *Service) run(ctx context.Context, job *PendingJob, onProgress func(processed int, soFar *ImportResult)) *ImportResult {
+	result := job.Result
+	if result == nil {
+		result = &ImportResult{}
+	}
+
+	result.Total = len(job.Entries)
 
 	opts := importOptions{
-		userID: userID,
-		source: source,
-		enrich: enrich,
+		userID: job.UserID,
+		source: job.Source,
+		enrich: job.Enrich,
 		cutoff: time.Now().AddDate(0, 0, -providerDaysLimit).Format("2006-01-02"),
 	}
 
-	for i := range entries {
-		result.record(&entries[i], s.importEntry(ctx, &entries[i], opts))
-		onProgress(i + 1)
+	for i := job.Processed; i < len(job.Entries); i++ {
+		result.record(&job.Entries[i], s.importEntry(ctx, &job.Entries[i], opts))
+		onProgress(i+1, result)
 	}
 
 	s.log.Info("import completed",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
+	"github.com/thulasirajkomminar/flightlog/internal/importer"
 )
 
 const (
@@ -50,7 +51,7 @@ func Open(path string) (*gorm.DB, error) {
 }
 
 func migrate(db *gorm.DB) error {
-	err := db.AutoMigrate(&domain.Flight{}, &domain.FlightMiss{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{})
+	err := db.AutoMigrate(&domain.Flight{}, &domain.FlightMiss{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{}, &importer.JobRecord{})
 	if err != nil {
 		return fmt.Errorf("failed to run database migration: %w", err)
 	}

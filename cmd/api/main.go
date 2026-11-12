@@ -167,7 +167,10 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 
 	go flightService.RunRefresher(ctx)
 
-	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup)
+	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup).
+		WithJobRepository(importer.NewJobStore(db))
+	// Carry on with imports that a restart interrupted.
+	importService.ResumeInterrupted(ctx)
 	importHandler := importer.NewHandler(importService)
 
 	userStore := user.NewStore(db)
