@@ -317,3 +317,46 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 		t.Errorf("other user's routes = %d, want 0", len(other))
 	}
 }
+
+func TestGetStatsCountsOnlyLandedFlights(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+	dep := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	arr := dep.Add(90 * time.Minute)
+
+	cancelled := testFlight("BA2002", "2026-01-02", domain.FlightStatusCancelled)
+	cancelled.Airline.IATA = "BA"
+	cancelled.Arrival.Airport.IATA = "CDG"
+
+	for _, f := range []*domain.Flight{
+		testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded),
+		cancelled,
+		testFlight("KL1003", "2026-01-03", domain.FlightStatusScheduled),
+	} {
+		f.GreatCircleDistance.Km = 370
+		f.Departure.ScheduledTime.UTC = &dep
+		f.Arrival.ScheduledTime.UTC = &arr
+		insertFlight(t, db, f, time.Now())
+
+		err := svc.AddFlight(ctx, "user-1", f.ID)
+		if err != nil {
+			t.Fatalf("AddFlight: %v", err)
+		}
+	}
+
+	got, err := svc.GetStats(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+
+	want := domain.FlightStats{Flights: 1, Distance: 370, FlightTime: 1.5, Airports: 2, Airlines: 1}
+	if got.Flights != want.Flights || got.Distance != want.Distance || got.Airports != want.Airports || got.Airlines != want.Airlines {
+		t.Errorf("stats = %+v, want %+v", *got, want)
+	}
+
+	if diff := got.FlightTime - want.FlightTime; diff > 0.001 || diff < -0.001 {
+		t.Errorf("flight time = %v, want %v", got.FlightTime, want.FlightTime)
+	}
+}

@@ -2,6 +2,7 @@ package flight
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -231,7 +232,8 @@ func (s *UserFlightStore) GetYears(ctx context.Context, userID string) ([]int, e
 	return years, nil
 }
 
-// GetStats computes flight statistics for a user.
+// GetStats computes flight statistics for a user. Only landed flights count,
+// matching what the map shows: cancelled or upcoming flights were not flown.
 func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.FlightStats, error) {
 	var stats domain.FlightStats
 
@@ -247,8 +249,8 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 			COUNT(DISTINCT f.airline_iata) AS airlines
 		FROM flights f
 		JOIN user_flights uf ON uf.flight_id = f.id
-		WHERE uf.user_id = ?
-	`, userID).Scan(&stats).Error
+		WHERE uf.user_id = ? AND f.status = ?
+	`, userID, domain.FlightStatusLanded).Scan(&stats).Error
 	if err != nil {
 		return nil, err
 	}
@@ -259,12 +261,12 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 	err = s.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
 			SELECT dep_airport_iata AS iata FROM flights f
-			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = ?
+			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND f.status = @status
 			UNION
 			SELECT arr_airport_iata AS iata FROM flights f
-			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = ?
+			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND f.status = @status
 		)
-	`, userID, userID).Scan(&airportCount).Error
+	`, sql.Named("user", userID), sql.Named("status", domain.FlightStatusLanded)).Scan(&airportCount).Error
 	if err != nil {
 		return nil, err
 	}
