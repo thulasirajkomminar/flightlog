@@ -50,4 +50,6 @@ volumes:
   - flightlog_data:/app/data
 ```
 
+The app runs as an unprivileged `flightlog` user inside the container. On start-up the container makes the data directory writable for that user, so volumes created by older versions keep working without any manual step.
+
 To back up Flightlog, **back up that volume**. To migrate to a new host, copy the volume contents (or use [Export](../usage/import-export.md#export) and re-import on the new instance — both work).

@@ -38,7 +38,7 @@ By default anyone who can reach your instance can create an account. Once you (a
 There's no reset-by-email flow — Flightlog doesn't send email. Instead, whoever runs the instance can reset any account's password from the command line:
 
 ```bash
-docker compose exec flightlog ./main reset-password you@example.com
+docker compose exec -u flightlog flightlog ./main reset-password you@example.com
 ```
 
 It prints a new random password. Sign in with it, then pick your own under **Settings**. Every existing session for that account is signed out.
