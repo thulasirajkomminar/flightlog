@@ -18,12 +18,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"
 
 import { Button } from "~/components/ui/button"
 import { ButtonGroup } from "~/components/ui/button-group"
-import {
-  crossesDateLine,
-  greatCirclePath,
-  type LngLat,
-  sphericalCenter,
-} from "~/lib/geo"
+import { greatCirclePath, type LngLat, sphericalCenter } from "~/lib/geo"
 
 import type { FlightRoute, RouteAirport } from "~/types"
 
@@ -58,32 +53,23 @@ function airportsOf(routes: FlightRoute[]): RouteAirport[] {
   return Array.from(byIata.values())
 }
 
-// On the globe every route follows its great circle. A flat map cannot show a
-// route across the date line in one piece, so there those routes become a
-// direct (dashed) line between the two airports.
-function routeFeatures(
-  routes: FlightRoute[],
-  projection: Projection
-): Features {
+// Every route follows its great circle. The path keeps continuous longitudes,
+// so a route across the date line stays in one piece on the globe; on the flat
+// map it leaves through one edge and comes back in through the opposite one.
+function routeFeatures(routes: FlightRoute[]): Features {
   return {
     type: "FeatureCollection",
-    features: routes.map((route) => {
-      const from = route.departure.location
-      const to = route.arrival.location
-      const direct = projection === "mercator" && crossesDateLine(from, to)
-      const coordinates: LngLat[] = direct
-        ? [
-            [from.lon, from.lat],
-            [to.lon, to.lat],
-          ]
-        : greatCirclePath(from, to)
-
-      return {
-        type: "Feature",
-        properties: { direct },
-        geometry: { type: "LineString", coordinates },
-      }
-    }),
+    features: routes.map((route) => ({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: greatCirclePath(
+          route.departure.location,
+          route.arrival.location
+        ),
+      },
+    })),
   }
 }
 
@@ -106,22 +92,12 @@ function addLayers(map: MapLibreMap) {
   map.addSource(ROUTES_SOURCE, { type: "geojson", data: empty })
   map.addSource(AIRPORTS_SOURCE, { type: "geojson", data: empty })
 
-  const line = { "line-color": ROUTE_COLOR, "line-width": 2 }
   map.addLayer({
     id: "routes",
     type: "line",
     source: ROUTES_SOURCE,
-    filter: ["!", ["get", "direct"]],
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { ...line, "line-opacity": 0.6 },
-  })
-  map.addLayer({
-    id: "routes-direct",
-    type: "line",
-    source: ROUTES_SOURCE,
-    filter: ["get", "direct"],
-    // Dashed marks a plain connection that is not the path flown.
-    paint: { ...line, "line-opacity": 0.6, "line-dasharray": [3, 3] },
+    paint: { "line-color": ROUTE_COLOR, "line-width": 2, "line-opacity": 0.6 },
   })
   map.addLayer({
     id: AIRPORTS_LAYER,
@@ -229,8 +205,6 @@ export default function FlightMap({ routes }: FlightMapProps) {
       },
       center: [0, 30],
       zoom: WHOLE_GLOBE_ZOOM,
-      // One world only, so a flat-map route never appears twice.
-      renderWorldCopies: false,
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
@@ -256,9 +230,7 @@ export default function FlightMap({ routes }: FlightMapProps) {
 
     const airports = airportsOf(routes)
     map.setProjection({ type: projection })
-    map
-      .getSource<GeoJSONSource>(ROUTES_SOURCE)
-      ?.setData(routeFeatures(routes, projection))
+    map.getSource<GeoJSONSource>(ROUTES_SOURCE)?.setData(routeFeatures(routes))
     map
       .getSource<GeoJSONSource>(AIRPORTS_SOURCE)
       ?.setData(airportFeatures(airports))

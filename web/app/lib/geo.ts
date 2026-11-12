@@ -11,19 +11,14 @@ const DEG = Math.PI / 180
 // drawing hundreds of points for short hops.
 const DEGREES_PER_STEP = 2
 
-/** Whether the shortest path between two points crosses the antimeridian. */
-export function crossesDateLine(from: Point, to: Point): boolean {
-  return Math.abs(to.lon - from.lon) > 180
-}
-
 /**
  * Returns the great-circle path between two points: the route an aircraft
  * flies, which is not a straight line on a flat map.
  *
  * Longitudes are continuous rather than wrapped to [-180, 180]: a path from
  * Sydney (151) to Los Angeles (-118) ends at 242. That keeps the line in one
- * piece on a globe; on a flat map such a path runs off the edge, so callers
- * drawing a flat map should check crossesDateLine first.
+ * piece on a globe; on a flat map it runs off one edge and re-enters through
+ * the opposite one.
  */
 export function greatCirclePath(from: Point, to: Point): LngLat[] {
   const lat1 = from.lat * DEG
