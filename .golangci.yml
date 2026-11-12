@@ -10,6 +10,9 @@ linters:
     - exhaustruct
     - exhaustruct_v5
     - varnamelen
+    # Deprecated: replaced by wsl_v5 and gomodguard_v2, which "default: all" enables.
+    - wsl
+    - gomodguard
   settings:
     tagalign:
       order:
