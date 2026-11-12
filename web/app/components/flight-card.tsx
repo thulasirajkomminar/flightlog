@@ -157,17 +157,22 @@ export function FlightCard({
 
   return (
     <Collapsible>
-      <Item variant="outline" className="flex-nowrap gap-6 px-7 py-6">
+      {/* On a phone the row stacks: airline and status, then the route, then
+          the actions. From the sm breakpoint up it is a single line. */}
+      <Item
+        variant="outline"
+        className="gap-3 px-4 py-4 sm:flex-nowrap sm:gap-6 sm:px-7 sm:py-6"
+      >
         <CollapsibleTrigger asChild>
-          <button className="flex flex-1 cursor-pointer items-center justify-between text-left">
-            <div className="flex min-w-36 flex-col items-start gap-0.5">
+          <button className="grid min-w-0 flex-1 cursor-pointer grid-cols-3 items-center gap-y-3 text-left sm:flex sm:justify-between">
+            <div className="col-span-2 flex flex-col items-start gap-0.5 sm:min-w-36">
               <span className="text-sm text-muted-foreground">
                 {flight.airline.name || flight.airline.iata}
               </span>
               <span className="text-lg font-semibold">{flight.number}</span>
             </div>
 
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-start gap-1 sm:items-center">
               <div className="flex items-center gap-2">
                 <AirplaneTakeoffIcon className="size-5 text-muted-foreground" />
                 <span className="text-lg font-medium">
@@ -182,9 +187,9 @@ export function FlightCard({
 
             <div className="flex flex-col items-center gap-1">
               <div className="flex items-center gap-2">
-                <div className="h-px w-12 bg-border" />
+                <div className="h-px w-5 bg-border sm:w-12" />
                 <AirplaneIcon className="size-5 text-primary" weight="fill" />
-                <div className="h-px w-12 bg-border" />
+                <div className="h-px w-5 bg-border sm:w-12" />
               </div>
               {flight.greatCircleDistance.km > 0 && (
                 <span className="text-xs text-muted-foreground">
@@ -193,7 +198,7 @@ export function FlightCard({
               )}
             </div>
 
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-end gap-1 text-right sm:items-center sm:text-center">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-medium">
                   {flight.arrival.airport.iata}
@@ -206,7 +211,7 @@ export function FlightCard({
               </span>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="col-start-3 row-start-1 flex items-center justify-end gap-2 sm:gap-4">
               <Badge
                 variant="outline"
                 className={`capitalize ${statusColor(flight.status)}`}

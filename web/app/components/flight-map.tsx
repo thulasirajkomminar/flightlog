@@ -37,8 +37,18 @@ const AIRPORTS_SOURCE = "airports"
 const AIRPORTS_LAYER = "airports"
 const ROUTE_COLOR = "#3b82f6"
 
-// Zoom at which the whole globe fits in the dashboard card.
+// Zoom at which the whole globe fits a map of GLOBE_REFERENCE_SIZE pixels
+// on its shorter side. Halving the size takes one zoom level off.
 const WHOLE_GLOBE_ZOOM = 0.9
+const GLOBE_REFERENCE_SIZE = 500
+
+// Zoom at which the whole globe fits the map as it is currently sized, so it
+// is not cut off on a narrow phone screen.
+function wholeGlobeZoom(map: MapLibreMap): number {
+  const { clientWidth, clientHeight } = map.getContainer()
+  const shorter = Math.min(clientWidth, clientHeight) || GLOBE_REFERENCE_SIZE
+  return WHOLE_GLOBE_ZOOM + Math.log2(shorter / GLOBE_REFERENCE_SIZE)
+}
 
 type Projection = "globe" | "mercator"
 
@@ -187,7 +197,7 @@ function showAirports(
   if (projection === "globe" && spansGlobe) {
     map.jumpTo({
       center: sphericalCenter(airports.map((a) => a.location)),
-      zoom: WHOLE_GLOBE_ZOOM,
+      zoom: wholeGlobeZoom(map),
     })
     return
   }
