@@ -40,7 +40,7 @@ Flightlog is built to be gentle on a free plan. It **caches every lookup** in it
 - Re-opening that flight, re-running the same search, exporting, browsing = **0 API calls**.
 - Searching for a flight that doesn't exist = **1 API call**, and the answer is remembered — for a week when the date is in the past, for six hours otherwise — so trying again is free.
 - Searching again for a flight that hasn't landed yet = **0 API calls**, unless its date is within a few days of today. Then it is refreshed, at most once every 30 minutes, so you see current times and gates.
-- A flight in your log that was added before it flew = **1 API call** after its scheduled arrival, to pick up that it landed. If AeroDataBox doesn't confirm the landing, Flightlog tries twice more (after 6 and 24 hours) and then stops. Flights between airports AeroDataBox doesn't track live are never checked at all.
+- A flight in your log that was added before it flew = **1 API call** after its scheduled arrival, to pick up that it landed. If AeroDataBox doesn't confirm the landing, Flightlog tries twice more (after 6 and 24 hours) and then stops. Flights between airports AeroDataBox doesn't track live are never checked at all. Set `FLIGHT_STATUS_REFRESH=false` to switch these checks off entirely.
 - Re-importing your own Flightlog CSV export = **0 API calls** (everything is in the file).
 - Importing a Flighty CSV = **0 API calls** with enrichment off; with it on, up to 1 call per flight under one year old.
 

@@ -725,3 +725,19 @@ func TestPruneMissesKeepsOnlyUsableAnswers(t *testing.T) {
 		t.Errorf("misses left = %+v, want only the recent one", left)
 	}
 }
+
+func TestRefreshDueCanBeSwitchedOff(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	provider := &fakeProvider{}
+	svc, db := newTestService(t, provider)
+	svc.WithStatusRefresh(false)
+	arrivedFlight(t, svc, db, now, "KL1001")
+
+	svc.RefreshDue(context.Background(), now)
+
+	if provider.calls != 0 {
+		t.Errorf("provider calls = %d, want 0 with status refresh switched off", provider.calls)
+	}
+}

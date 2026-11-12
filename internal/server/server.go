@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -24,6 +25,7 @@ const (
 
 const (
 	ipRequestsPerMinute   = 100
+	authAttemptsPerMinute = 10
 	userRequestsPerMinute = 200
 )
 
@@ -35,6 +37,8 @@ type Dependencies struct {
 
 	// Sessions decides whether a signed token is still accepted.
 	Sessions SessionChecker
+	// Ping checks that the database is reachable, for the health endpoint.
+	Ping func(ctx context.Context) error
 
 	JWTSecret      string
 	Version        string
@@ -55,25 +59,16 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r.Use(ClientIP(deps.TrustedProxies))
 	r.Use(RateLimitByIP(ipRequestsPerMinute, 1*time.Minute))
 
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		err := json.NewEncoder(w).Encode(map[string]any{
-			"status":  "ok",
-			"time":    time.Now().Unix(),
-			"version": deps.Version,
-		})
-		if err != nil {
-			logger.GetLogger().Error("failed to encode health response", zap.Error(err))
-		}
-	})
+	r.Get("/health", healthHandler(deps))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public routes
 		r.Group(func(r chi.Router) {
 			r.Use(chimiddleware.Timeout(requestTimeout))
-			r.Post("/auth/register", deps.UserHandler.Register)
-			r.Post("/auth/login", deps.UserHandler.Login)
+			// Signing in and up get a much tighter limit than the rest of the
+			// API, to slow down password guessing.
+			r.With(RateLimitByIP(authAttemptsPerMinute, time.Minute)).Post("/auth/register", deps.UserHandler.Register)
+			r.With(RateLimitByIP(authAttemptsPerMinute, time.Minute)).Post("/auth/login", deps.UserHandler.Login)
 			r.Get("/auth/config", deps.UserHandler.Config)
 		})
 
@@ -113,6 +108,36 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	}
 
 	return r
+}
+
+// healthHandler reports whether the app can serve requests, which includes
+// being able to reach its database. It answers 503 when it cannot, so
+// container health checks notice.
+func healthHandler(deps *Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		status, code := "ok", http.StatusOK
+
+		if deps.Ping != nil {
+			err := deps.Ping(r.Context())
+			if err != nil {
+				logger.GetLogger().Error("health check failed", zap.Error(err))
+
+				status, code = "unavailable", http.StatusServiceUnavailable
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+
+		err := json.NewEncoder(w).Encode(map[string]any{
+			"status":  status,
+			"time":    time.Now().Unix(),
+			"version": deps.Version,
+		})
+		if err != nil {
+			logger.GetLogger().Error("failed to encode health response", zap.Error(err))
+		}
+	}
 }
 
 func addSPAHandler(r *chi.Mux, webFS fs.FS) {

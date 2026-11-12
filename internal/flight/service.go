@@ -82,6 +82,8 @@ type Service struct {
 	provider   Provider
 	backfiller CacheBackfiller
 	coverage   LiveCoverage
+	// refreshOff disables background status checks.
+	refreshOff bool
 	// inflight shares one provider call between identical concurrent searches.
 	inflight singleflight.Group
 	log      *logger.ComponentLogger

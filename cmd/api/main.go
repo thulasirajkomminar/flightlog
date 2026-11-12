@@ -62,6 +62,8 @@ func main() {
 
 	appLogger.Info("Starting Flightlog API server")
 
+	warnAboutConfig(cfg, appLogger)
+
 	db, err := initDatabase(cfg, appLogger)
 	if err != nil {
 		appLogger.Error("Failed to initialise database", err)
@@ -82,6 +84,14 @@ func main() {
 
 	startServer(srv, appLogger)
 	awaitShutdown(srv, db, appLogger)
+}
+
+// warnAboutConfig logs settings that work but are unsafe.
+func warnAboutConfig(cfg *config.Config, appLogger *logger.ComponentLogger) {
+	if cfg.Auth.WeakSecret() {
+		appLogger.Warn("AUTH_JWT_SECRET is short enough to be guessed; anyone who guesses it can sign in as any user. " +
+			"Generate a strong one with: openssl rand -base64 32")
+	}
 }
 
 func initLogger(cfg *config.Config) (*logger.ComponentLogger, error) {
@@ -149,6 +159,23 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 	return db, nil
 }
 
+// pingDatabase returns a health probe for the database.
+func pingDatabase(db *gorm.DB) func(context.Context) error {
+	return func(ctx context.Context) error {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fmt.Errorf("database handle: %w", err)
+		}
+
+		err = sqlDB.PingContext(ctx)
+		if err != nil {
+			return fmt.Errorf("ping database: %w", err)
+		}
+
+		return nil
+	}
+}
+
 func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 	flightCacheStore := flight.NewCacheStore(db)
 	userFlightStore := flight.NewUserFlightStore(db)
@@ -164,6 +191,9 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup).
 		WithLiveCoverage(aeroProvider)
 	flightHandler := flight.NewHandler(flightService)
+
+	// The loop always runs for housekeeping; status checks are optional.
+	flightService.WithStatusRefresh(cfg.Flights.StatusRefresh)
 
 	go flightService.RunRefresher(ctx)
 
@@ -182,6 +212,7 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 		ImportHandler:  importHandler,
 		UserHandler:    userHandler,
 		Sessions:       userService,
+		Ping:           pingDatabase(db),
 		JWTSecret:      cfg.Auth.JWTSecret,
 		Version:        version,
 		WebFS:          web.Frontend(),

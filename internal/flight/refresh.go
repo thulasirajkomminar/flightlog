@@ -74,6 +74,14 @@ func (s *Service) WithLiveCoverage(coverage LiveCoverage) *Service {
 	return s
 }
 
+// WithStatusRefresh turns background status checks on or off. They are on by
+// default; turning them off means no API call is ever made unprompted.
+func (s *Service) WithStatusRefresh(enabled bool) *Service {
+	s.refreshOff = !enabled
+
+	return s
+}
+
 // RunRefresher periodically updates the status of flights in users'
 // collections that were added before they landed. It blocks until ctx is done.
 func (s *Service) RunRefresher(ctx context.Context) {
@@ -105,6 +113,10 @@ func (s *Service) pruneMisses(ctx context.Context, now time.Time) {
 // RefreshDue re-fetches flights that are due for a status check and returns
 // how many were updated with provider data.
 func (s *Service) RefreshDue(ctx context.Context, now time.Time) int {
+	if s.refreshOff {
+		return 0
+	}
+
 	// Keep what is left of a low quota for searches people start themselves.
 	if !s.provider.BackgroundAllowed() {
 		s.log.Debug("skipping status refresh: provider quota is low or exhausted")
