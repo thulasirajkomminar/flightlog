@@ -143,6 +143,10 @@ func RateLimitByUser(requests int, window time.Duration) func(next http.Handler)
 	return httprate.LimitBy(requests, window, api.UserRateKey)
 }
 
+// mapTileHost serves the dashboard map's basemap tiles. It must match the tile
+// URL in web/app/components/flight-map.tsx.
+const mapTileHost = "https://server.arcgisonline.com"
+
 // SecurityHeaders adds browser security headers to all responses.
 func SecurityHeaders(scriptHashes []string) func(http.Handler) http.Handler {
 	scriptSrc := "'self'"
@@ -153,9 +157,10 @@ func SecurityHeaders(scriptHashes []string) func(http.Handler) http.Handler {
 	csp := "default-src 'self'; " +
 		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data: https://server.arcgisonline.com; " +
+		"img-src 'self' data: blob:; " +
 		"font-src 'self' data:; " +
-		"connect-src 'self'; " +
+		// The map fetches its basemap tiles from the tile host.
+		"connect-src 'self' " + mapTileHost + "; " +
 		"base-uri 'self'; " +
 		"frame-ancestors 'none'"
 

@@ -41,15 +41,16 @@ func TestCSPAllowsMapTileHost(t *testing.T) {
 
 	host := strings.ReplaceAll(string(match[1]), "{s}", "*")
 
-	var imgSrc string
+	var connectSrc string
 
 	for directive := range strings.SplitSeq(contentSecurityPolicy(t), ";") {
-		if d := strings.TrimSpace(directive); strings.HasPrefix(d, "img-src ") {
-			imgSrc = d
+		if d := strings.TrimSpace(directive); strings.HasPrefix(d, "connect-src ") {
+			connectSrc = d
 		}
 	}
 
-	if !strings.Contains(" "+imgSrc+" ", " "+host+" ") {
-		t.Errorf("CSP %q does not allow the map tile host %s used in %s", imgSrc, host, mapComponent)
+	// The map fetches tiles, so the host must be allowed in connect-src.
+	if !strings.Contains(" "+connectSrc+" ", " "+host+" ") {
+		t.Errorf("CSP %q does not allow the map tile host %s used in %s", connectSrc, host, mapComponent)
 	}
 }

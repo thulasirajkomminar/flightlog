@@ -8,7 +8,9 @@ It has two halves.
 
 ## The map
 
-Every flight you've flown is drawn as a line between two airport dots. Hover or click on a dot to see which airport it is. The map projection is the standard Mercator-style world view; long-haul routes curve the way you'd expect on a globe. Routes across the Pacific date line can't be drawn that way on a flat map, so they appear as a dashed straight line between the two airports instead.
+Every flight you've flown is drawn as a line between two airport dots, on a globe you can drag to rotate and scroll to zoom. Hover over a dot to see which airport it is. Routes follow the great circle — the path the aircraft actually flies — so long-haul routes curve the way you'd expect.
+
+The button under the zoom controls switches to a flat world map, handy when you want to see every route at once. A flat map can't show a route across the Pacific date line in one piece, so there those routes appear as a dashed straight line between the two airports; switch back to the globe to see them properly.
 
 A few things worth knowing:
 
