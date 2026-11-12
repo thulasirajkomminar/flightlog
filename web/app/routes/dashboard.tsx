@@ -143,7 +143,7 @@ export default function DashboardPage() {
         </div>
 
         {breakdown && stats && stats.flights > 0 && (
-          <FlightBreakdown breakdown={breakdown} />
+          <FlightBreakdown breakdown={breakdown} distance={stats.distance} />
         )}
       </div>
     </>

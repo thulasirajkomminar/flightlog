@@ -390,6 +390,18 @@ func (s *UserFlightStore) GetBreakdown(ctx context.Context, userID string) (*dom
 		return nil, err
 	}
 
+	err = db.Raw(`
+		SELECT CAST(strftime('%Y', f.flight_date) AS INTEGER) AS year, CAST(strftime('%m', f.flight_date) AS INTEGER) AS month, COUNT(*) AS flights
+		`+flown+` GROUP BY year, month ORDER BY year DESC, month`, args...).Scan(&out.Months).Error
+	if err != nil {
+		return nil, err
+	}
+
+	out.Longest, err = s.longestFlight(db, args)
+	if err != nil {
+		return nil, err
+	}
+
 	// A route counts in both directions: AMS-JFK and JFK-AMS are one route.
 	err = db.Raw(`
 		SELECT MIN(f.dep_airport_iata, f.arr_airport_iata) AS "from", MAX(f.dep_airport_iata, f.arr_airport_iata) AS "to", COUNT(*) AS flights
@@ -463,6 +475,27 @@ func (s *UserFlightStore) GetRoutes(ctx context.Context, userID string) ([]*doma
 	}
 
 	return routes, nil
+}
+
+// longestFlight returns the flown flight with the greatest distance, or nil
+// when none has a known distance.
+func (*UserFlightStore) longestFlight(db *gorm.DB, args []any) (*domain.LongestFlight, error) {
+	var longest []domain.LongestFlight
+
+	err := db.Raw(`
+		SELECT f.dep_airport_iata AS "from", f.arr_airport_iata AS "to", f.gcd_km AS distance
+		FROM flights f JOIN user_flights uf ON uf.flight_id = f.id
+		WHERE uf.user_id = @user AND `+flownSQL+` AND f.gcd_km > 0
+		ORDER BY f.gcd_km DESC, f.flight_date LIMIT 1`, args...).Scan(&longest).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(longest) == 0 {
+		return nil, nil //nolint:nilnil // "no such flight" is a normal answer here
+	}
+
+	return &longest[0], nil
 }
 
 func (r *routeRow) toDomain() *domain.Route {

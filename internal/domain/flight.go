@@ -193,12 +193,29 @@ type AirlineStat struct {
 	Flights int    `json:"flights"`
 }
 
+// MonthStat counts the flights flown in one calendar month.
+type MonthStat struct {
+	Year    int `json:"year"`
+	Month   int `json:"month"`
+	Flights int `json:"flights"`
+}
+
+// LongestFlight is the longest single flight a user has flown.
+type LongestFlight struct {
+	From     string  `json:"from"`
+	To       string  `json:"to"`
+	Distance float64 `json:"distance"`
+}
+
 // FlightBreakdown is a closer look at a user's flown flights.
 type FlightBreakdown struct {
 	Years     []YearStat    `json:"years"`
+	Months    []MonthStat   `json:"months"`
 	Routes    []RouteStat   `json:"routes"`
 	Airlines  []AirlineStat `json:"airlines"`
 	Countries int           `json:"countries"`
+	// Longest is nil when no flown flight has a known distance.
+	Longest *LongestFlight `json:"longest"`
 }
 
 // ProviderQuota is what the flight data provider last reported about the API

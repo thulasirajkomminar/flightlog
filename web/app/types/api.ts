@@ -112,6 +112,8 @@ export interface FlightStats {
 
 export interface FlightBreakdown {
   years: { year: number; flights: number; distance: number }[] | null
+  months: { year: number; month: number; flights: number }[] | null
+  longest: { from: string; to: string; distance: number } | null
   routes: { from: string; to: string; flights: number }[] | null
   airlines: { name: string; flights: number }[] | null
   countries: number

@@ -2,6 +2,7 @@ package flight
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -69,6 +70,25 @@ func TestGetBreakdown(t *testing.T) {
 
 	if got.Countries != 3 {
 		t.Errorf("countries = %d, want 3 (NL, US, GB)", got.Countries)
+	}
+}
+
+func TestGetBreakdownMonthsAndLongestFlight(t *testing.T) {
+	t.Parallel()
+
+	got, err := collection(t).GetBreakdown(context.Background(), testUser)
+	if err != nil {
+		t.Fatalf("GetBreakdown: %v", err)
+	}
+
+	wantMonths := []domain.MonthStat{{Year: 2025, Month: 6, Flights: 1}, {Year: 2025, Month: 7, Flights: 1}, {Year: 2024, Month: 3, Flights: 2}}
+	if !slices.Equal(got.Months, wantMonths) {
+		t.Errorf("months = %+v, want %+v", got.Months, wantMonths)
+	}
+
+	// All flights are 1000 km; the earliest of them is reported.
+	if got.Longest == nil || *got.Longest != (domain.LongestFlight{From: ams, To: jfk, Distance: 1000}) {
+		t.Errorf("longest = %+v, want the first AMS-JFK flight", got.Longest)
 	}
 }
 
