@@ -12,6 +12,7 @@ import { Minus, Plus } from "@phosphor-icons/react"
 
 import { Button } from "~/components/ui/button"
 import { ButtonGroup } from "~/components/ui/button-group"
+import { greatCirclePath } from "~/lib/geo"
 
 import type { FlightRoute, RouteAirport } from "~/types"
 
@@ -114,10 +115,10 @@ export default function FlightMap({ routes }: FlightMapProps) {
       {routes.map((route) => (
         <Polyline
           key={`${route.departure.iata}-${route.arrival.iata}`}
-          positions={[
-            [route.departure.location.lat, route.departure.location.lon],
-            [route.arrival.location.lat, route.arrival.location.lon],
-          ]}
+          positions={greatCirclePath(
+            route.departure.location,
+            route.arrival.location
+          )}
           pathOptions={{
             color: "#3b82f6",
             weight: 2,
