@@ -29,7 +29,8 @@ func SetUser(ctx context.Context, claims *UserClaims) context.Context {
 	return context.WithValue(ctx, userCtxKey, claims)
 }
 
-// GetUser extracts user claims from the request context.
+// GetUser extracts user claims from the request context. It returns nil only
+// for routes outside the Auth middleware; handlers behind it can rely on a user.
 func GetUser(r *http.Request) *UserClaims {
 	claims, ok := r.Context().Value(userCtxKey).(*UserClaims)
 	if !ok {

@@ -15,10 +15,7 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
 
-const (
-	errUnauthorized = "unauthorized"
-	errInvalidBody  = "invalid request body"
-)
+const errInvalidBody = "invalid request body"
 
 // RegisterRequest represents a user registration request.
 type RegisterRequest struct {
@@ -173,11 +170,6 @@ func isHTTPS(r *http.Request) bool {
 // GetProfile returns the authenticated user's profile.
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	profile, err := h.userService.GetProfile(r.Context(), user.UserID)
 	if err != nil {
@@ -192,11 +184,6 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateProfile updates the authenticated user's profile.
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	var req UpdateProfileRequest
 

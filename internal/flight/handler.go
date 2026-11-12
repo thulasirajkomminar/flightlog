@@ -20,7 +20,6 @@ const (
 	maxListLimit        = 200
 	floatBitSize        = 64
 	errFlightIDRequired = "flight id is required"
-	errUnauthorized     = "unauthorized"
 	errInvalidDate      = "invalid date format, expected YYYY-MM-DD"
 	errInternal         = "internal server error"
 
@@ -44,13 +43,6 @@ func NewHandler(flightService *Service) *Handler {
 
 // SearchFlights handles flight search by number and optional date.
 func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
-	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
-
 	flightNumber := r.URL.Query().Get("flight_number")
 	if flightNumber == "" {
 		api.RespondError(w, http.StatusBadRequest, "flight_number parameter is required")
@@ -105,11 +97,6 @@ func respondSearchError(w http.ResponseWriter, err error) {
 // AddFlight links a cached flight to the authenticated user.
 func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -186,11 +173,6 @@ func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria,
 // ListFlights lists the authenticated user's flights.
 func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	criteria, err := parseCriteria(r, user.UserID)
 	if err != nil {
@@ -224,11 +206,6 @@ func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 // GetFlight returns a single flight by ID.
 func (h *Handler) GetFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -250,11 +227,6 @@ func (h *Handler) GetFlight(w http.ResponseWriter, r *http.Request) {
 // GetStats returns aggregated flight statistics.
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	stats, err := h.flightService.GetStats(r.Context(), user.UserID)
 	if err != nil {
@@ -269,11 +241,6 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 // GetRoutes returns the distinct routes the user has flown, for the map.
 func (h *Handler) GetRoutes(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	routes, err := h.flightService.GetRoutes(r.Context(), user.UserID)
 	if err != nil {
@@ -288,11 +255,6 @@ func (h *Handler) GetRoutes(w http.ResponseWriter, r *http.Request) {
 // ExportFlights returns all user flights as a CSV file download.
 func (h *Handler) ExportFlights(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	flights, err := h.flightService.ExportFlights(r.Context(), user.UserID)
 	if err != nil {
@@ -370,11 +332,6 @@ func formatTimePtr(t *time.Time) string {
 // DeleteFlight removes a flight from the user's collection.
 func (h *Handler) DeleteFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {

@@ -70,11 +70,6 @@ func (h *Handler) Sources(w http.ResponseWriter, _ *http.Request) {
 // Returns nil on failure (error response already written).
 func (h *Handler) parseUpload(w http.ResponseWriter, r *http.Request) (*api.UserClaims, []ImportEntry) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, "unauthorized")
-
-		return nil, nil
-	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
