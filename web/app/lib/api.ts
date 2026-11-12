@@ -8,6 +8,10 @@ export class ApiError extends Error {
   }
 }
 
+// Fired on any 401 response so the app can drop the signed-in user and send
+// them back to the login page when their session has expired.
+export const UNAUTHORIZED_EVENT = "flightlog:unauthorized"
+
 class ApiClient {
   private async request<T>(
     path: string,
@@ -22,6 +26,10 @@ class ApiClient {
     }
 
     const response = await fetch(path, mergedOptions)
+
+    if (response.status === 401) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({

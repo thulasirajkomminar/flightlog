@@ -7,6 +7,7 @@ import {
 } from "react"
 import { useNavigate } from "react-router"
 
+import { UNAUTHORIZED_EVENT } from "~/lib/api"
 import { ROUTES } from "~/constants"
 
 import type { User } from "~/types"
@@ -35,6 +36,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(setUser)
       .catch(() => {})
       .finally(() => setIsLoading(false))
+  }, [])
+
+  // An expired session surfaces as a 401 on any request: clear the user so the
+  // dashboard layout redirects to the login page.
+  useEffect(() => {
+    const onUnauthorized = () => setUser(null)
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
 
   const login = useCallback(
