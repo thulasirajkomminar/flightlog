@@ -13,10 +13,9 @@ import (
 
 const apiThrottleDelay = 1 * time.Second
 
-// Provider fetches airport and distance data from an external API.
+// Provider fetches airport data from an external API.
 type Provider interface {
 	GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error)
-	GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error)
 }
 
 // CachedLookup decorates a Provider with DB-backed caching and rate limiting.
@@ -60,36 +59,10 @@ func (c *CachedLookup) GetAirportByIATA(ctx context.Context, iata string) (*doma
 	return a, nil
 }
 
-// GetDistanceBetweenAirports returns route distance, consulting the cache before the API.
-func (c *CachedLookup) GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error) {
-	d, err := c.store.FindDistance(ctx, fromIATA, toIATA)
-	if err == nil {
-		return d, nil
-	}
-
-	time.Sleep(apiThrottleDelay)
-
-	d, err = c.provider.GetDistanceBetweenAirports(ctx, fromIATA, toIATA)
-	if err != nil {
-		return nil, fmt.Errorf("distance lookup %s-%s: %w", fromIATA, toIATA, err)
-	}
-
-	saveErr := c.store.SaveDistance(ctx, fromIATA, toIATA, d)
-	if saveErr != nil {
-		c.log.Warn("failed to cache distance",
-			zap.String("route", fromIATA+"-"+toIATA),
-			zap.Error(saveErr),
-		)
-	}
-
-	return d, nil
-}
-
 // BackfillFromFlight populates the cache from data already present in a flight.
 func (c *CachedLookup) BackfillFromFlight(ctx context.Context, f *domain.Flight) {
 	c.backfillAirport(ctx, &f.Departure.Airport)
 	c.backfillAirport(ctx, &f.Arrival.Airport)
-	c.backfillDistance(ctx, f)
 }
 
 func (c *CachedLookup) backfillAirport(ctx context.Context, a *domain.Airport) {
@@ -100,19 +73,5 @@ func (c *CachedLookup) backfillAirport(ctx context.Context, a *domain.Airport) {
 	err := c.store.SaveAirport(ctx, a)
 	if err != nil {
 		c.log.Debug("backfill airport failed", zap.String("iata", a.IATA), zap.Error(err))
-	}
-}
-
-func (c *CachedLookup) backfillDistance(ctx context.Context, f *domain.Flight) {
-	dep := f.Departure.Airport.IATA
-	arr := f.Arrival.Airport.IATA
-
-	if f.GreatCircleDistance.Km <= 0 || dep == "" || arr == "" {
-		return
-	}
-
-	err := c.store.SaveDistance(ctx, dep, arr, &f.GreatCircleDistance)
-	if err != nil {
-		c.log.Debug("backfill distance failed", zap.String("route", dep+"-"+arr), zap.Error(err))
 	}
 }

@@ -291,16 +291,6 @@ func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *dom
 		}
 	}
 
-	if fc.GreatCircleDistance != nil {
-		flight.GreatCircleDistance = domain.GreatCircleDistance{
-			Meter: fc.GreatCircleDistance.Meter,
-			Km:    fc.GreatCircleDistance.Km,
-			Mile:  fc.GreatCircleDistance.Mile,
-			Nm:    fc.GreatCircleDistance.Nm,
-			Feet:  fc.GreatCircleDistance.Feet,
-		}
-	}
-
 	if !fc.LastUpdatedUtc.IsZero() {
 		t := fc.LastUpdatedUtc.Time
 		flight.LastUpdatedUtc = &t
@@ -308,9 +298,27 @@ func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *dom
 
 	flight.Departure = mapMovement(&fc.Departure)
 	flight.Arrival = mapMovement(&fc.Arrival)
+
+	flight.GreatCircleDistance = mapDistance(fc.GreatCircleDistance, flight.Departure.Airport.Location, flight.Arrival.Airport.Location)
 	flight.RawData = string(rawBody)
 
 	return flight
+}
+
+// mapDistance uses the provider's distance when present and otherwise
+// computes it from the airport coordinates.
+func mapDistance(d *greatCircleDistanceResponse, from, to domain.Location) domain.GreatCircleDistance {
+	if d == nil {
+		return domain.DistanceBetween(from, to)
+	}
+
+	return domain.GreatCircleDistance{
+		Meter: d.Meter,
+		Km:    d.Km,
+		Mile:  d.Mile,
+		Nm:    d.Nm,
+		Feet:  d.Feet,
+	}
 }
 
 func mapMovement(m *movementResponse) domain.Movement {
@@ -450,40 +458,6 @@ func setOptionalAirportFields(airport *domain.Airport, ac *api.AirportContract) 
 	if ac.MunicipalityName != nil {
 		airport.MunicipalityName = *ac.MunicipalityName
 	}
-}
-
-// GetDistanceBetweenAirports retrieves great circle distance between two airports by IATA code.
-func (p *Provider) GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error) {
-	resp, err := p.client.GetAirportDistanceTime(ctx, api.Iata, fromIATA, toIATA, nil)
-	if err != nil {
-		return nil, fmt.Errorf("distance lookup failed for %s-%s: %w", fromIATA, toIATA, err)
-	}
-
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %d for distance %s-%s", ErrUnexpectedStatus, resp.StatusCode, fromIATA, toIATA)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read distance response: %w", err)
-	}
-
-	var dt api.AirportDistanceTimeContract
-
-	err = json.Unmarshal(body, &dt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode distance response: %w", err)
-	}
-
-	return &domain.GreatCircleDistance{
-		Meter: dt.GreatCircleDistance.Meter,
-		Km:    dt.GreatCircleDistance.Km,
-		Mile:  dt.GreatCircleDistance.Mile,
-		Nm:    dt.GreatCircleDistance.Nm,
-		Feet:  dt.GreatCircleDistance.Feet,
-	}, nil
 }
 
 func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, date time.Time) ([]byte, error) {

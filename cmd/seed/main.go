@@ -66,7 +66,7 @@ func openDB(dbPath string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{}, &airport.DistanceRecord{})
+	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to run migration: %w", err)
 	}

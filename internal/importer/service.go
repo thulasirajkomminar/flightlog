@@ -44,10 +44,9 @@ type FlightCacher interface {
 	FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error)
 }
 
-// AirportLookup resolves airport details and route distances.
+// AirportLookup resolves airport details.
 type AirportLookup interface {
 	GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error)
-	GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error)
 }
 
 // ImportResult summarises an import run.
@@ -374,17 +373,9 @@ func (s *Service) createFromImport(
 	}
 
 	if entry.DistanceKm > 0 {
-		flight.GreatCircleDistance = distanceFromKm(entry.DistanceKm)
+		flight.GreatCircleDistance = domain.DistanceFromKm(entry.DistanceKm)
 	} else {
-		dist, err := s.airports.GetDistanceBetweenAirports(ctx, entry.DepIATA, entry.ArrIATA)
-		if err != nil {
-			s.log.Warn("distance lookup failed",
-				zap.String("route", entry.DepIATA+"-"+entry.ArrIATA),
-				zap.Error(err),
-			)
-		} else {
-			flight.GreatCircleDistance = *dist
-		}
+		flight.GreatCircleDistance = domain.DistanceBetween(flight.Departure.Airport.Location, flight.Arrival.Airport.Location)
 	}
 
 	return flight
@@ -427,21 +418,4 @@ func (s *Service) linkFlight(ctx context.Context, userID, flightID string) error
 	}
 
 	return nil
-}
-
-const (
-	metersPerKm   = 1000
-	milesPerKm    = 0.621371
-	nauticalPerKm = 0.539957
-	feetPerKm     = 3280.84
-)
-
-func distanceFromKm(km float64) domain.GreatCircleDistance {
-	return domain.GreatCircleDistance{
-		Km:    km,
-		Meter: km * metersPerKm,
-		Mile:  km * milesPerKm,
-		Nm:    km * nauticalPerKm,
-		Feet:  km * feetPerKm,
-	}
 }

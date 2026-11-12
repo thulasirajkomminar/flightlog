@@ -149,9 +149,15 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{}, &airport.DistanceRecord{})
+	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to run database migration: %w", err)
+	}
+
+	// Route distances are computed from coordinates now; drop the old cache table.
+	err = db.Migrator().DropTable("distance_cache")
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop legacy distance cache: %w", err)
 	}
 
 	appLogger.Info("Database migration completed")
