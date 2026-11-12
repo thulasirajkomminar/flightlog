@@ -8,7 +8,7 @@ AeroDataBox publishes its API through [RapidAPI](https://rapidapi.com/aedbx-aedb
 
 1. **Create a RapidAPI account.** Head to [rapidapi.com](https://rapidapi.com) and sign up — Google or GitHub sign-in works fine.
 
-2. **Subscribe to AeroDataBox.** Go to the [AeroDataBox listing on RapidAPI](https://rapidapi.com/aedbx-aedbx/api/aerodatabox) and click **Subscribe to Test**. Pick the **BASIC** plan — it's free and gives you a healthy monthly quota that's more than enough for personal use.
+2. **Subscribe to AeroDataBox.** Go to the [AeroDataBox listing on RapidAPI](https://rapidapi.com/aedbx-aedbx/api/aerodatabox) and click **Subscribe to Test**. Pick the **BASIC** plan — it's free and, when last checked in November 2026, gives you 600 API units a month. A flight lookup costs 2 units, so that is about 300 lookups a month: more than enough for personal use.
 
 3. **Copy your `X-RapidAPI-Key`.** On the AeroDataBox page, look at the right-hand panel under **Header Parameters**. You'll see a key labelled `X-RapidAPI-Key` with a long string. That's your API key — copy it.
 
@@ -34,7 +34,9 @@ Everything else on the dashboard (distances, airline names, airport details) is 
 
 ## How many calls will I make?
 
-Flightlog is built to be gentle on a free plan. It **caches every lookup** in its local SQLite database and only goes back to AeroDataBox when the answer could have changed:
+Flightlog is built to be gentle on a free plan. It **caches every lookup** in its local SQLite database and only goes back to AeroDataBox when the answer could have changed.
+
+AeroDataBox counts quota in **API units**, and one flight lookup — one "API call" in the list below — costs **2 units**. You can see how many units are left under **Settings** in the app.
 
 - Logging a new flight = **1 API call**.
 - Re-opening that flight, re-running the same search, exporting, browsing = **0 API calls**.
@@ -46,7 +48,7 @@ Flightlog is built to be gentle on a free plan. It **caches every lookup** in it
 
 If you're worried about quota, leave enrichment off when you import — you'll still get the basics (date, airline, route) from the CSV itself.
 
-Flightlog also watches the quota AeroDataBox reports. When less than a fifth of it is left, the automatic landing checks pause so the rest is kept for your own searches. If the quota runs out completely, Flightlog stops calling for a while and tells you so, instead of failing slowly.
+Flightlog also watches the quota AeroDataBox reports. When less than a fifth of it is left (120 units on the free plan), the automatic landing checks pause so the rest is kept for your own searches. If the quota runs out completely, Flightlog stops calling for a while and tells you so, instead of failing slowly.
 
 !!! info "Keys are local"
     Your API key only ever leaves the Flightlog container in outbound requests to AeroDataBox. It's never sent to your browser, never logged in plain text, never shared with anything else.
