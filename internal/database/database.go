@@ -61,5 +61,20 @@ func migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to drop legacy distance cache: %w", err)
 	}
 
+	return dropLegacyRawData(db)
+}
+
+// dropLegacyRawData removes the column that used to hold the full provider
+// response for every flight. It was never read.
+func dropLegacyRawData(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&domain.Flight{}, "raw_data") {
+		return nil
+	}
+
+	err := db.Exec("ALTER TABLE flights DROP COLUMN raw_data").Error
+	if err != nil {
+		return fmt.Errorf("failed to drop legacy raw_data column: %w", err)
+	}
+
 	return nil
 }

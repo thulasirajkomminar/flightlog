@@ -149,7 +149,7 @@ func parseFlightResults(body []byte, dateStr string) ([]*domain.Flight, error) {
 
 	flights := make([]*domain.Flight, 0, len(results))
 	for i := range results {
-		flights = append(flights, convertToFlight(&results[i], dateStr, body))
+		flights = append(flights, convertToFlight(&results[i], dateStr))
 	}
 
 	return flights, nil
@@ -258,7 +258,7 @@ type dateTimeResponse struct {
 	Local flexTime `json:"local"`
 }
 
-func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *domain.Flight {
+func convertToFlight(fc *flightResponse, flightDate string) *domain.Flight {
 	flight := &domain.Flight{
 		Number:          fc.Number,
 		FlightDate:      flightDate,
@@ -297,7 +297,6 @@ func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *dom
 	flight.Arrival = mapMovement(&fc.Arrival)
 
 	flight.GreatCircleDistance = mapDistance(fc.GreatCircleDistance, flight.Departure.Airport.Location, flight.Arrival.Airport.Location)
-	flight.RawData = string(rawBody)
 
 	return flight
 }

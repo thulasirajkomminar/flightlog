@@ -113,7 +113,6 @@ type Flight struct {
 	GreatCircleDistance GreatCircleDistance `json:"greatCircleDistance"       gorm:"embedded;embeddedPrefix:gcd_"`
 	LastUpdatedUtc      *time.Time          `json:"lastUpdatedUtc,omitempty"`
 	Provider            string              `json:"provider"                  example:"aerodatabox"`
-	RawData             string              `json:"-"                         gorm:"type:text"`
 	CreatedAt           time.Time           `json:"createdAt"                 example:"2026-03-17T12:00:00Z"`
 	UpdatedAt           time.Time           `json:"updatedAt"                 example:"2026-03-17T12:00:00Z"`
 }
