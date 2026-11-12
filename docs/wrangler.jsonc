@@ -1,7 +1,8 @@
 // Cloudflare Workers (static assets) config for the docs site.
 // Used by Workers Builds: root directory "docs", deploy via `npx wrangler deploy`.
+// "name" must match the Worker's name in the Cloudflare dashboard, or builds fail.
 {
-  "name": "flightlog-docs",
+  "name": "flightlog",
   "compatibility_date": "2026-10-26",
   "assets": {
     "directory": "./site",
