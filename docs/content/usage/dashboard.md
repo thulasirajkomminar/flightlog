@@ -8,7 +8,7 @@ It has two halves.
 
 ## The map
 
-Every landed flight you've saved is drawn as a line between two airport dots. Hover or click on a dot to see which airport it is. The map projection is the standard Mercator-style world view; long-haul routes curve the way you'd expect on a globe.
+Every flight you've flown is drawn as a line between two airport dots. Hover or click on a dot to see which airport it is. The map projection is the standard Mercator-style world view; long-haul routes curve the way you'd expect on a globe. Routes across the Pacific date line can't be drawn that way on a flat map, so they appear as a dashed straight line between the two airports instead.
 
 A few things worth knowing:
 
@@ -21,7 +21,7 @@ The five tiles under the map summarise every flight you've actually flown:
 
 | Tile            | What it counts                                                           |
 | --------------- | ------------------------------------------------------------------------ |
-| **Flights**     | Every landed flight, including duplicates (a round-trip is two flights). |
+| **Flights**     | Every flown flight, including duplicates (a round-trip is two flights).  |
 | **Distance**    | Sum of all the great-circle distances, in kilometres.                    |
 | **Flight Time** | Sum of scheduled flight durations across everything you've flown.        |
 | **Airports**    | Unique airports you've passed through (departure _or_ arrival).          |
@@ -29,8 +29,8 @@ The five tiles under the map summarise every flight you've actually flown:
 
 These update in real time as you add or delete flights — there's no "refresh stats" button, and there doesn't need to be one.
 
-!!! note "Only landed flights count"
-    A flight that is still **Scheduled**, or was **Cancelled** or **Diverted**, stays in your log (so your history is complete) but doesn't add to the map or to any of the tiles. Upcoming flights are picked up automatically once they land.
+!!! note "Only flown flights count"
+    A flight that is still upcoming, or was **Cancelled** or **Diverted**, stays in your log (so your history is complete) but doesn't add to the map or to any of the tiles. Upcoming flights are picked up automatically once they land. AeroDataBox can't confirm a landing at every airport, so a flight that is still marked **Scheduled** a day after its date is counted as flown too.
 
 ## What's not on this page
 

@@ -255,10 +255,34 @@ func (s *UserFlightStore) GetYears(ctx context.Context, userID string) ([]int, e
 	return years, nil
 }
 
-// GetStats computes flight statistics for a user. Only landed flights count,
-// matching what the map shows: cancelled or upcoming flights were not flown.
+// flownSQL selects the flights (alias f) a user has actually flown: landed
+// ones, plus past flights the provider never confirmed. Outside its live
+// coverage the provider keeps reporting a flight as scheduled, so a
+// not-cancelled flight dated before the cutoff is taken as flown. Cancelled,
+// diverted and incident flights never count.
+const flownSQL = `(f.status = @landed OR (f.status IN (@scheduled, @active) AND f.flight_date < @cutoff))`
+
+// flownGraceDays is how long after its date an unconfirmed flight is still
+// given the chance to be refreshed before it counts as flown.
+const flownGraceDays = 1
+
+// flownArgs returns the named arguments for a query using flownSQL and @user.
+func flownArgs(userID string, now time.Time) []any {
+	return []any{
+		sql.Named("user", userID),
+		sql.Named("landed", domain.FlightStatusLanded),
+		sql.Named("scheduled", domain.FlightStatusScheduled),
+		sql.Named("active", domain.FlightStatusActive),
+		sql.Named("cutoff", now.AddDate(0, 0, -flownGraceDays).Format(time.DateOnly)),
+	}
+}
+
+// GetStats computes flight statistics for a user over the flights they have
+// flown (see flownSQL), matching what the map shows.
 func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.FlightStats, error) {
 	var stats domain.FlightStats
+
+	args := flownArgs(userID, time.Now().UTC())
 
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT
@@ -272,8 +296,8 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 			COUNT(DISTINCT f.airline_iata) AS airlines
 		FROM flights f
 		JOIN user_flights uf ON uf.flight_id = f.id
-		WHERE uf.user_id = ? AND f.status = ?
-	`, userID, domain.FlightStatusLanded).Scan(&stats).Error
+		WHERE uf.user_id = @user AND `+flownSQL+`
+	`, args...).Scan(&stats).Error
 	if err != nil {
 		return nil, err
 	}
@@ -284,12 +308,12 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 	err = s.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
 			SELECT dep_airport_iata AS iata FROM flights f
-			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND f.status = @status
+			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND `+flownSQL+`
 			UNION
 			SELECT arr_airport_iata AS iata FROM flights f
-			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND f.status = @status
+			JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND `+flownSQL+`
 		)
-	`, sql.Named("user", userID), sql.Named("status", domain.FlightStatusLanded)).Scan(&airportCount).Error
+	`, args...).Scan(&airportCount).Error
 	if err != nil {
 		return nil, err
 	}
@@ -312,9 +336,9 @@ type routeRow struct {
 	Flights int
 }
 
-// GetRoutes returns the distinct routes a user has flown, with the number of
-// landed flights on each. Flights without airport coordinates are left out
-// because they cannot be drawn.
+// GetRoutes returns the distinct routes a user has flown (see flownSQL), with
+// the number of flights on each. Flights without airport coordinates are left
+// out because they cannot be drawn.
 func (s *UserFlightStore) GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error) {
 	var rows []routeRow
 
@@ -327,12 +351,12 @@ func (s *UserFlightStore) GetRoutes(ctx context.Context, userID string) ([]*doma
 			COUNT(*) AS flights
 		FROM flights f
 		JOIN user_flights uf ON uf.flight_id = f.id
-		WHERE uf.user_id = ? AND f.status = ?
+		WHERE uf.user_id = @user AND `+flownSQL+`
 			AND NOT (f.dep_airport_lat = 0 AND f.dep_airport_lon = 0)
 			AND NOT (f.arr_airport_lat = 0 AND f.arr_airport_lon = 0)
 		GROUP BY f.dep_airport_iata, f.arr_airport_iata
 		ORDER BY f.dep_airport_iata, f.arr_airport_iata
-	`, userID, domain.FlightStatusLanded).Scan(&rows).Error
+	`, flownArgs(userID, time.Now().UTC())...).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

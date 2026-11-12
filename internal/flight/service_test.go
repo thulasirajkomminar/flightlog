@@ -277,8 +277,10 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 
 	flights := []*domain.Flight{
 		testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded),
-		testFlight("KL1002", "2026-01-02", domain.FlightStatusLanded),
+		// Never confirmed by the provider, but long past: counts as flown.
+		testFlight("KL1002", "2026-01-02", domain.FlightStatusScheduled),
 		testFlight("KL1003", "2026-01-03", domain.FlightStatusCancelled),
+		testFlight("KL1005", time.Now().AddDate(0, 0, 30).Format(time.DateOnly), domain.FlightStatusScheduled),
 		noCoords,
 	}
 
@@ -297,7 +299,7 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 	}
 
 	if len(routes) != 1 {
-		t.Fatalf("routes = %d, want 1 (cancelled and coordinate-less flights excluded)", len(routes))
+		t.Fatalf("routes = %d, want 1 (cancelled, upcoming and coordinate-less flights excluded)", len(routes))
 	}
 
 	want := domain.Route{
@@ -319,7 +321,7 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 	}
 }
 
-func TestGetStatsCountsOnlyLandedFlights(t *testing.T) {
+func TestGetStatsCountsOnlyFlownFlights(t *testing.T) {
 	t.Parallel()
 
 	svc, db := newTestService(t, &fakeProvider{})
@@ -331,10 +333,15 @@ func TestGetStatsCountsOnlyLandedFlights(t *testing.T) {
 	cancelled.Airline.IATA = "BA"
 	cancelled.Arrival.Airport.IATA = "CDG"
 
+	today := time.Now().UTC().Format(time.DateOnly)
+
 	for _, f := range []*domain.Flight{
 		testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded),
+		// Never confirmed by the provider, but long past: counts as flown.
+		testFlight("KL1002", "2026-01-02", domain.FlightStatusScheduled),
 		cancelled,
-		testFlight("KL1003", "2026-01-03", domain.FlightStatusScheduled),
+		// Today's flight may still be refreshed, so it does not count yet.
+		testFlight("KL1003", today, domain.FlightStatusScheduled),
 	} {
 		f.GreatCircleDistance.Km = 370
 		f.Departure.ScheduledTime.UTC = &dep
@@ -352,7 +359,7 @@ func TestGetStatsCountsOnlyLandedFlights(t *testing.T) {
 		t.Fatalf("GetStats: %v", err)
 	}
 
-	want := domain.FlightStats{Flights: 1, Distance: 370, FlightTime: 1.5, Airports: 2, Airlines: 1}
+	want := domain.FlightStats{Flights: 2, Distance: 740, FlightTime: 3, Airports: 2, Airlines: 1}
 	if got.Flights != want.Flights || got.Distance != want.Distance || got.Airports != want.Airports || got.Airlines != want.Airlines {
 		t.Errorf("stats = %+v, want %+v", *got, want)
 	}
