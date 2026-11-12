@@ -27,7 +27,7 @@ COPY . .
 COPY --from=frontend-builder /app/build/client ./internal/web/dist
 
 ARG VERSION=dev
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-s -w -X main.version=${VERSION}" -o main cmd/api/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-s -w -X main.version=${VERSION}" -o main ./cmd/api
 
 # Final stage
 FROM alpine:3.24
