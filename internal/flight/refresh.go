@@ -101,10 +101,7 @@ func (s *Service) refreshFlight(ctx context.Context, cached *domain.Flight) bool
 }
 
 func (s *Service) fetchSameRoute(ctx context.Context, cached *domain.Flight) *domain.Flight {
-	flights, err := s.provider.SearchFlights(ctx, map[string]string{
-		"flight_iata": domain.NormalizeFlightNumber(cached.Number),
-		"flight_date": cached.FlightDate,
-	})
+	flights, err := s.provider.SearchFlights(ctx, domain.NormalizeFlightNumber(cached.Number), cached.FlightDate)
 	if err != nil {
 		s.log.Warn("flight refresh failed", zap.String("flight_id", cached.ID), zap.Error(err))
 

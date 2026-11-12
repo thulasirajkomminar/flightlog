@@ -100,12 +100,9 @@ func (p *Provider) GetProviderName() string {
 	return "aerodatabox"
 }
 
-// SearchFlights searches for flights.
-// Criteria keys: "flight_iata", "flight_date" (YYYY-MM-DD).
-func (p *Provider) SearchFlights(ctx context.Context, criteria map[string]string) ([]*domain.Flight, error) {
-	flightNumber := criteria["flight_iata"]
-	dateStr := criteria["flight_date"]
-
+// SearchFlights searches for flights by IATA flight number and date
+// (YYYY-MM-DD). An empty date means today.
+func (p *Provider) SearchFlights(ctx context.Context, flightNumber, dateStr string) ([]*domain.Flight, error) {
 	if dateStr == "" {
 		dateStr = time.Now().UTC().Format("2006-01-02")
 	}

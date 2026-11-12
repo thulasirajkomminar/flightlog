@@ -31,7 +31,7 @@ type fakeProvider struct {
 	calls   int
 }
 
-func (p *fakeProvider) SearchFlights(_ context.Context, _ map[string]string) ([]*domain.Flight, error) {
+func (p *fakeProvider) SearchFlights(_ context.Context, _, _ string) ([]*domain.Flight, error) {
 	p.calls++
 
 	if p.err != nil {

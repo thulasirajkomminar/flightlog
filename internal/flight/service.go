@@ -51,7 +51,9 @@ type UserFlightRepository interface {
 
 // Provider defines the contract for flight data providers.
 type Provider interface {
-	SearchFlights(ctx context.Context, criteria map[string]string) ([]*domain.Flight, error)
+	// SearchFlights returns the flights with the given IATA flight number
+	// departing on date (YYYY-MM-DD).
+	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
 	GetProviderName() string
 }
 
@@ -240,12 +242,7 @@ func anyStale(flights []*domain.Flight, now time.Time) bool {
 }
 
 func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
-	criteria := map[string]string{
-		"flight_iata": flightNumber,
-		"flight_date": date,
-	}
-
-	providerFlights, err := s.provider.SearchFlights(ctx, criteria)
+	providerFlights, err := s.provider.SearchFlights(ctx, flightNumber, date)
 	if err != nil {
 		s.log.Error("provider search failed", err,
 			zap.String(logKeyFlightNumber, flightNumber),
