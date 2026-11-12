@@ -14,6 +14,7 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 	ErrValidation         = errors.New("validation error")
 	ErrFlightAlreadyAdded = errors.New("flight already added to your collection")
+	ErrFlightNotFound     = errors.New("flight not found")
 )
 
 // User represents a registered user entity.

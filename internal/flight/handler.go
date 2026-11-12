@@ -120,16 +120,24 @@ func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
 
 	err := h.flightService.AddFlight(r.Context(), user.UserID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrFlightAlreadyAdded) {
-			api.RespondError(w, http.StatusConflict, err.Error())
-		} else {
-			api.RespondError(w, http.StatusInternalServerError, errInternal)
-		}
+		respondCollectionError(w, err)
 
 		return
 	}
 
 	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "Flight added successfully"})
+}
+
+// respondCollectionError maps errors from adding or removing a flight.
+func respondCollectionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrFlightAlreadyAdded):
+		api.RespondError(w, http.StatusConflict, domain.ErrFlightAlreadyAdded.Error())
+	case errors.Is(err, domain.ErrFlightNotFound):
+		api.RespondError(w, http.StatusNotFound, domain.ErrFlightNotFound.Error())
+	default:
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+	}
 }
 
 func parseIntParam(r *http.Request, key string) (int, bool) {
@@ -377,7 +385,7 @@ func (h *Handler) DeleteFlight(w http.ResponseWriter, r *http.Request) {
 
 	err := h.flightService.DeleteFlight(r.Context(), user.UserID, id)
 	if err != nil {
-		api.RespondError(w, http.StatusInternalServerError, errInternal)
+		respondCollectionError(w, err)
 
 		return
 	}

@@ -3,10 +3,10 @@ package flight
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 )
@@ -118,19 +118,18 @@ func NewUserFlightStore(db *gorm.DB) *UserFlightStore {
 	return &UserFlightStore{db: db}
 }
 
-// Add links a flight to a user.
+// Add links a flight to a user. It returns ErrFlightNotFound for an unknown
+// flight and ErrFlightAlreadyAdded when the link already exists.
 func (s *UserFlightStore) Add(ctx context.Context, userID, flightID string) error {
-	var existing domain.UserFlight
+	var known int64
 
-	err := s.db.WithContext(ctx).
-		Where("user_id = ? AND flight_id = ?", userID, flightID).
-		First(&existing).Error
-	if err == nil {
-		return domain.ErrFlightAlreadyAdded
+	err := s.db.WithContext(ctx).Model(&domain.Flight{}).Where("id = ?", flightID).Count(&known).Error
+	if err != nil {
+		return err
 	}
 
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	if known == 0 {
+		return domain.ErrFlightNotFound
 	}
 
 	uf := domain.UserFlight{
@@ -139,14 +138,34 @@ func (s *UserFlightStore) Add(ctx context.Context, userID, flightID string) erro
 	}
 	uf.GenerateID()
 
-	return s.db.WithContext(ctx).Create(&uf).Error
+	// The unique index decides, so two concurrent requests cannot both insert.
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&uf)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return domain.ErrFlightAlreadyAdded
+	}
+
+	return nil
 }
 
-// Remove unlinks a flight from a user.
+// Remove unlinks a flight from a user. It returns ErrFlightNotFound when the
+// flight is not in the user's collection.
 func (s *UserFlightStore) Remove(ctx context.Context, userID, flightID string) error {
-	return s.db.WithContext(ctx).
+	result := s.db.WithContext(ctx).
 		Where("user_id = ? AND flight_id = ?", userID, flightID).
-		Delete(&domain.UserFlight{}).Error
+		Delete(&domain.UserFlight{})
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return domain.ErrFlightNotFound
+	}
+
+	return nil
 }
 
 // Get retrieves a user's flight with full flight data.

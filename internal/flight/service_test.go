@@ -399,3 +399,40 @@ func TestListFlightsPagesAreStableForSameDayFlights(t *testing.T) {
 		t.Errorf("paged order = %v, want %s (latest departure first, no repeats)", got, want)
 	}
 }
+
+func TestAddAndDeleteFlightErrors(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+
+	f := testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded)
+	insertFlight(t, db, f, time.Now())
+
+	steps := []struct {
+		name string
+		run  func() error
+		want error
+	}{
+		{"add unknown flight", func() error { return svc.AddFlight(ctx, "user-1", "no-such-id") }, domain.ErrFlightNotFound},
+		{"add flight", func() error { return svc.AddFlight(ctx, "user-1", f.ID) }, nil},
+		{"add it again", func() error { return svc.AddFlight(ctx, "user-1", f.ID) }, domain.ErrFlightAlreadyAdded},
+		{"delete flight", func() error { return svc.DeleteFlight(ctx, "user-1", f.ID) }, nil},
+		{"delete it again", func() error { return svc.DeleteFlight(ctx, "user-1", f.ID) }, domain.ErrFlightNotFound},
+	}
+
+	for _, step := range steps {
+		err := step.run()
+		if !errors.Is(err, step.want) {
+			t.Errorf("%s: err = %v, want %v", step.name, err, step.want)
+		}
+	}
+
+	var links int64
+
+	db.Model(&domain.UserFlight{}).Count(&links)
+
+	if links != 0 {
+		t.Errorf("user_flights rows = %d, want 0", links)
+	}
+}
