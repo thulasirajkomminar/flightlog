@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -299,5 +300,38 @@ func TestSessionsEndOnPasswordChangeAndAccountDeletion(t *testing.T) {
 	valid, err = h.userService.SessionValid(ctx, u.ID, time.Now().Add(time.Second))
 	if err != nil || valid {
 		t.Errorf("session of a deleted account: valid = %v, err = %v; want invalid", valid, err)
+	}
+}
+
+func TestResetPasswordIssuesAWorkingRandomPassword(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler(t)
+	u := registerUser(t, h)
+	ctx := t.Context()
+
+	password, err := h.userService.ResetPassword(ctx, "JANE@example.com")
+	if err != nil || len(password) < 16 {
+		t.Fatalf("ResetPassword = %q, err %v; want a password of at least 16 characters", password, err)
+	}
+
+	_, err = h.userService.Authenticate(ctx, u.Email, password)
+	if err != nil {
+		t.Errorf("login with the new password: %v", err)
+	}
+
+	_, err = h.userService.Authenticate(ctx, u.Email, "password123")
+	if !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Errorf("login with the old password: err = %v, want invalid credentials", err)
+	}
+
+	valid, _ := h.userService.SessionValid(ctx, u.ID, time.Now().Add(-time.Hour))
+	if valid {
+		t.Error("a session opened before the reset is still valid")
+	}
+
+	_, err = h.userService.ResetPassword(ctx, "nobody@example.com")
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		t.Errorf("reset for an unknown email: err = %v, want user not found", err)
 	}
 }

@@ -35,7 +35,13 @@ By default anyone who can reach your instance can create an account. Once you (a
 
 ## Forgetting a password
 
-There's no self-serve password reset today — the simplest recovery is to drop into the SQLite database and reset the password hash manually, or just create a new account. If you're the only user on the instance and you're stuck, ping me on the [GitHub issue tracker](https://github.com/thulasirajkomminar/flightlog/issues) and I'll help you out.
+There's no reset-by-email flow — Flightlog doesn't send email. Instead, whoever runs the instance can reset any account's password from the command line:
+
+```bash
+docker compose exec flightlog ./main reset-password you@example.com
+```
+
+It prints a new random password. Sign in with it, then pick your own under **Settings**. Every existing session for that account is signed out.
 
 !!! tip "Use a password manager"
-    Since there's no reset email flow, treat your Flightlog credentials like any other self-hosted app — store the password in 1Password / Bitwarden / your manager of choice and you'll never have to think about it again.
+    Since resetting needs access to the server, treat your Flightlog credentials like any other self-hosted app — store the password in 1Password / Bitwarden / your manager of choice and you'll never have to think about it again.

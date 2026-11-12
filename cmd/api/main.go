@@ -33,6 +33,8 @@ const (
 	serverIdleTimeout  = 120 * time.Second
 )
 
+var errUsage = errors.New("usage")
+
 // version is set at build time via ldflags.
 var version = "dev"
 
@@ -48,6 +50,15 @@ func main() {
 	}
 
 	defer logger.Sync()
+
+	if isResetPassword(os.Args) {
+		err = runResetPassword(cfg, os.Args)
+		if err != nil {
+			appLogger.Error("Password reset failed", err)
+		}
+
+		return
+	}
 
 	appLogger.Info("Starting Flightlog API server")
 

@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,7 +18,9 @@ import (
 
 const (
 	minPasswordLength = 8
-	logKeyUserID      = "user_id"
+	// generatedPasswordBytes of randomness give a 16-character password.
+	generatedPasswordBytes = 12
+	logKeyUserID           = "user_id"
 )
 
 // Repository defines the contract for user persistence.
@@ -172,6 +176,34 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, replaceme
 	s.log.Info("password changed", zap.String(logKeyUserID, userID))
 
 	return user, nil
+}
+
+// ResetPassword gives the account with this email a new random password and
+// returns it. Existing sessions stop working. It is meant for the operator of
+// the instance, not for an HTTP endpoint.
+func (s *Service) ResetPassword(ctx context.Context, email string) (string, error) {
+	user, err := s.repo.GetByEmail(ctx, normalizeEmail(email))
+	if err != nil {
+		return "", fmt.Errorf("find user %s: %w", email, err)
+	}
+
+	random := make([]byte, generatedPasswordBytes)
+
+	_, err = rand.Read(random)
+	if err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+
+	password := base64.RawURLEncoding.EncodeToString(random)
+
+	err = s.setPassword(ctx, user, password)
+	if err != nil {
+		return "", err
+	}
+
+	s.log.Info("password reset by operator", zap.String(logKeyUserID, user.ID))
+
+	return password, nil
 }
 
 // SessionValid reports whether a login token issued at issuedAt for userID is
