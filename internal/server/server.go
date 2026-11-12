@@ -33,6 +33,9 @@ type Dependencies struct {
 	ImportHandler *importer.Handler
 	UserHandler   *user.Handler
 
+	// Sessions decides whether a signed token is still accepted.
+	Sessions SessionChecker
+
 	JWTSecret      string
 	Version        string
 	WebFS          fs.FS
@@ -76,7 +79,7 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 		// Authenticated routes
 		r.Group(func(r chi.Router) {
-			r.Use(Auth(deps.JWTSecret))
+			r.Use(Auth(deps.JWTSecret, deps.Sessions))
 			r.Use(RateLimitByUser(userRequestsPerMinute, 1*time.Minute))
 
 			r.Group(func(r chi.Router) {

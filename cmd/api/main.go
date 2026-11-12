@@ -167,6 +167,7 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 		FlightHandler:  flightHandler,
 		ImportHandler:  importHandler,
 		UserHandler:    userHandler,
+		Sessions:       userService,
 		JWTSecret:      cfg.Auth.JWTSecret,
 		Version:        version,
 		WebFS:          web.Frontend(),

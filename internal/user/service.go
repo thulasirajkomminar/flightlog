@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -155,32 +156,38 @@ func (s *Service) UpdateProfile(ctx context.Context, userID, email, name string)
 }
 
 // ChangePassword replaces a user's password after verifying the current one.
-func (s *Service) ChangePassword(ctx context.Context, userID, current, replacement string) error {
+// Every session opened before the change stops working, so the caller must
+// issue a new one for the returned user.
+func (s *Service) ChangePassword(ctx context.Context, userID, current, replacement string) (*domain.User, error) {
 	user, err := s.verifyPassword(ctx, userID, current)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	err = validatePassword(replacement)
+	err = s.setPassword(ctx, user, replacement)
 	if err != nil {
-		return err
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(replacement), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
-	}
-
-	user.PasswordHash = string(hash)
-
-	err = s.repo.Update(ctx, user)
-	if err != nil {
-		return fmt.Errorf("update password for user %s: %w", userID, err)
+		return nil, err
 	}
 
 	s.log.Info("password changed", zap.String(logKeyUserID, userID))
 
-	return nil
+	return user, nil
+}
+
+// SessionValid reports whether a login token issued at issuedAt for userID is
+// still good: the account must exist and the token must not predate the
+// user's last password change.
+func (s *Service) SessionValid(ctx context.Context, userID string, issuedAt time.Time) (bool, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if errors.Is(err, domain.ErrUserNotFound) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("check session for user %s: %w", userID, err)
+	}
+
+	return !issuedAt.Before(user.SessionsValidFrom), nil
 }
 
 // DeleteAccount permanently removes a user and their flight collection after
@@ -197,6 +204,30 @@ func (s *Service) DeleteAccount(ctx context.Context, userID, password string) er
 	}
 
 	s.log.Info("account deleted", zap.String(logKeyUserID, userID))
+
+	return nil
+}
+
+// setPassword stores a new password and ends the user's existing sessions.
+func (s *Service) setPassword(ctx context.Context, user *domain.User, password string) error {
+	err := validatePassword(password)
+	if err != nil {
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	user.PasswordHash = string(hash)
+	// Token timestamps have one-second precision.
+	user.SessionsValidFrom = time.Now().UTC().Truncate(time.Second)
+
+	err = s.repo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("update password for user %s: %w", user.ID, err)
+	}
 
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -259,5 +260,44 @@ func TestDeleteAccountRemovesUserAndCollection(t *testing.T) {
 
 	if users != 0 || remaining != 1 {
 		t.Errorf("users = %d, links = %d; want 0 users and only the other user's link", users, remaining)
+	}
+}
+
+func TestSessionsEndOnPasswordChangeAndAccountDeletion(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler(t)
+	u := registerUser(t, h)
+	ctx := t.Context()
+	loggedInAt := time.Now().Add(-time.Hour)
+
+	valid, err := h.userService.SessionValid(ctx, u.ID, loggedInAt)
+	if err != nil || !valid {
+		t.Fatalf("session before any change: valid = %v, err = %v; want valid", valid, err)
+	}
+
+	rec := asUser(t, h.ChangePassword, u.ID, `{"currentPassword":"password123","newPassword":"new-password-1"}`)
+	if rec.Code != http.StatusOK || authCookie(t, rec).Value == "" {
+		t.Fatalf("change password: status %d, want 200 with a fresh session cookie", rec.Code)
+	}
+
+	valid, _ = h.userService.SessionValid(ctx, u.ID, loggedInAt)
+	if valid {
+		t.Error("a session opened before the password change is still valid")
+	}
+
+	valid, _ = h.userService.SessionValid(ctx, u.ID, time.Now().Add(time.Second))
+	if !valid {
+		t.Error("a session opened after the password change is not valid")
+	}
+
+	rec = asUser(t, h.DeleteAccount, u.ID, `{"password":"new-password-1"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete account: status %d", rec.Code)
+	}
+
+	valid, err = h.userService.SessionValid(ctx, u.ID, time.Now().Add(time.Second))
+	if err != nil || valid {
+		t.Errorf("session of a deleted account: valid = %v, err = %v; want invalid", valid, err)
 	}
 }

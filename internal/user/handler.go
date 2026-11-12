@@ -263,13 +263,23 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.userService.ChangePassword(r.Context(), api.GetUser(r).UserID, req.CurrentPassword, req.NewPassword)
+	user, err := h.userService.ChangePassword(r.Context(), api.GetUser(r).UserID, req.CurrentPassword, req.NewPassword)
 	if err != nil {
 		respondPasswordError(w, err)
 
 		return
 	}
 
+	// The change ended every existing session, including this one: issue a
+	// fresh token so the person who changed the password stays signed in.
+	token, err := h.generateToken(user)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, "failed to generate token")
+
+		return
+	}
+
+	setAuthCookie(w, r, token, defaultTokenExpiry)
 	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "password changed"})
 }
 

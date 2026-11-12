@@ -28,6 +28,10 @@ type User struct {
 	Name         string    `json:"name"      gorm:"not null"                      example:"Thulasiraj Komminar"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+
+	// SessionsValidFrom invalidates older sessions: a login token issued
+	// before this moment is no longer accepted. Zero means no cut-off.
+	SessionsValidFrom time.Time `json:"-" gorm:"column:sessions_valid_from"`
 }
 
 // GenerateID creates a UUID for the user if not already set.
