@@ -244,6 +244,18 @@ func TestDeleteAccountRemovesUserAndCollection(t *testing.T) {
 		t.Fatalf("create links: %v", err)
 	}
 
+	// An import job as the importer stores it, for this user and another one.
+	jobs := []string{
+		"CREATE TABLE import_jobs (user_id text PRIMARY KEY, entries text)",
+		"INSERT INTO import_jobs (user_id, entries) VALUES ('" + u.ID + "', '[]'), ('someone-else', '[]')",
+	}
+	for _, stmt := range jobs {
+		err = db.Exec(stmt).Error
+		if err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
 	rec := asUser(t, h.DeleteAccount, u.ID, `{"password":"wrong"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("delete with wrong password: status = %d, want 400", rec.Code)
@@ -254,13 +266,14 @@ func TestDeleteAccountRemovesUserAndCollection(t *testing.T) {
 		t.Fatalf("delete: status = %d, want 200 with the auth cookie cleared", rec.Code)
 	}
 
-	var users, remaining int64
+	var users, remaining, jobsLeft int64
 
 	db.Model(&domain.User{}).Count(&users)
 	db.Model(&domain.UserFlight{}).Count(&remaining)
+	db.Table("import_jobs").Count(&jobsLeft)
 
-	if users != 0 || remaining != 1 {
-		t.Errorf("users = %d, links = %d; want 0 users and only the other user's link", users, remaining)
+	if users != 0 || remaining != 1 || jobsLeft != 1 {
+		t.Errorf("users = %d, links = %d, import jobs = %d; want 0 users and only the other user's link and job", users, remaining, jobsLeft)
 	}
 }
 

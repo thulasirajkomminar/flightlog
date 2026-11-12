@@ -81,13 +81,24 @@ func (s *Service) RunRefresher(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
-		s.RefreshDue(ctx, time.Now().UTC())
+		now := time.Now().UTC()
+		s.pruneMisses(ctx, now)
+		s.RefreshDue(ctx, now)
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// pruneMisses drops remembered "no such flight" answers that are too old to
+// be used any more, so the table does not grow without bound.
+func (s *Service) pruneMisses(ctx context.Context, now time.Time) {
+	_, err := s.cache.PruneMisses(ctx, now.Add(-pastMissTTL))
+	if err != nil {
+		s.log.Warn("failed to prune remembered misses", zap.Error(err))
 	}
 }
 

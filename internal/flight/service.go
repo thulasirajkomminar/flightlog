@@ -42,6 +42,7 @@ type CacheRepository interface {
 	FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*domain.Flight, error)
 	FindMiss(ctx context.Context, flightNumber, flightDate string) (time.Time, bool)
 	SaveMiss(ctx context.Context, flightNumber, flightDate string, checkedAt time.Time) error
+	PruneMisses(ctx context.Context, before time.Time) (int64, error)
 	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
 	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
 }

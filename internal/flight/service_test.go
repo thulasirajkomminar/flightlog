@@ -697,3 +697,31 @@ func TestDistanceUnitsAreDerivedFromKilometres(t *testing.T) {
 		t.Error("miles are stored; only kilometres should be")
 	}
 }
+
+func TestPruneMissesKeepsOnlyUsableAnswers(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	misses := []domain.FlightMiss{
+		{FlightNumber: "KL1001", FlightDate: "2025-01-01", CheckedAt: now.Add(-pastMissTTL - time.Hour)},
+		{FlightNumber: "KL2003", FlightDate: "2025-01-01", CheckedAt: now.Add(-time.Hour)},
+	}
+
+	err := db.Create(&misses).Error
+	if err != nil {
+		t.Fatalf("create misses: %v", err)
+	}
+
+	svc.pruneMisses(ctx, now)
+
+	var left []domain.FlightMiss
+
+	db.Find(&left)
+
+	if len(left) != 1 || left[0].FlightNumber != "KL2003" {
+		t.Errorf("misses left = %+v, want only the recent one", left)
+	}
+}

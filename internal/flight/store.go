@@ -88,6 +88,14 @@ func (s *CacheStore) SaveMiss(ctx context.Context, flightNumber, flightDate stri
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&miss).Error
 }
 
+// PruneMisses forgets "no such flight" answers checked before the given time
+// and returns how many were removed.
+func (s *CacheStore) PruneMisses(ctx context.Context, before time.Time) (int64, error) {
+	result := s.db.WithContext(ctx).Where("checked_at < ?", before).Delete(&domain.FlightMiss{})
+
+	return result.RowsAffected, result.Error
+}
+
 // FindByRoute retrieves a cached flight by number, date, and route.
 func (s *CacheStore) FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error) {
 	var flight domain.Flight
