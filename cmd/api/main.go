@@ -150,7 +150,8 @@ func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Se
 	airportStore := airport.NewStore(db)
 	cachedLookup := airport.NewCachedLookup(airportStore, aeroProvider)
 
-	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup)
+	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup).
+		WithLiveCoverage(aeroProvider)
 	flightHandler := flight.NewHandler(flightService)
 
 	go flightService.RunRefresher(ctx)

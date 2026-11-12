@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -65,6 +66,11 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type Provider struct {
 	client *api.Client
 	log    *logger.ComponentLogger
+
+	// Live-tracked airports, from a free endpoint, kept in memory.
+	coverageMu      sync.Mutex
+	coverage        map[string]struct{}
+	coverageFetched time.Time
 }
 
 const (
@@ -93,6 +99,38 @@ func NewProvider(apiKey string) (*Provider, error) {
 	}
 
 	return &Provider{client: client, log: logger.NewComponentLogger("aerodatabox")}, nil
+}
+
+// coverageTTL is how long the list of live-tracked airports is reused. A
+// failed fetch is also remembered for this long, so it is not retried on
+// every refresher run.
+const coverageTTL = 24 * time.Hour
+
+// LiveAirports returns the ICAO codes of airports with live flight status
+// updates. It uses a free-tier endpoint, so it costs no API quota. The result
+// is nil when the list could not be fetched.
+func (p *Provider) LiveAirports(ctx context.Context) (map[string]struct{}, error) {
+	p.coverageMu.Lock()
+	defer p.coverageMu.Unlock()
+
+	if !p.coverageFetched.IsZero() && time.Since(p.coverageFetched) < coverageTTL {
+		return p.coverage, nil
+	}
+
+	p.coverageFetched = time.Now()
+
+	airports, err := p.fetchLiveAirports(ctx)
+	if err != nil {
+		p.coverage = nil
+		p.log.Warn("could not fetch live-tracked airports", zap.Error(err))
+
+		return nil, err
+	}
+
+	p.coverage = airports
+	p.log.Info("fetched live-tracked airports", zap.Int("count", len(airports)))
+
+	return airports, nil
 }
 
 // GetProviderName returns the provider name.
@@ -490,4 +528,31 @@ func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, dat
 	}
 
 	return body, nil
+}
+
+func (p *Provider) fetchLiveAirports(ctx context.Context) (map[string]struct{}, error) {
+	resp, err := p.client.GetFeedAirports(ctx, api.FlightLiveUpdates)
+	if err != nil {
+		return nil, fmt.Errorf("live airports request failed: %w", err)
+	}
+
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d for live airports", ErrUnexpectedStatus, resp.StatusCode)
+	}
+
+	var list api.StringCollectionContract
+
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&list)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode live airports: %w", err)
+	}
+
+	airports := make(map[string]struct{}, len(list.Items))
+	for _, icao := range list.Items {
+		airports[strings.ToUpper(icao)] = struct{}{}
+	}
+
+	return airports, nil
 }

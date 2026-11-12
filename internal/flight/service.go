@@ -19,19 +19,20 @@ const (
 	logKeyFlightNumber = "flight_number"
 	logKeyDate         = "date"
 
-	// searchRefreshAge is how old a cached non-final flight may be before a
-	// search re-fetches it from the provider.
-	searchRefreshAge = 15 * time.Minute
-	// providerHistoryDays is how far back the provider serves flight data.
-	providerHistoryDays = 365
+	// searchRefreshAge is how old a cached flight near its travel day may be
+	// before a search re-fetches it from the provider.
+	searchRefreshAge = 30 * time.Minute
+	// A search only re-fetches flights dated within this window around today.
+	searchRefreshDaysBefore = 3
+	searchRefreshDaysAhead  = 1
 )
 
 // CacheRepository manages cached flight data from providers.
 type CacheRepository interface {
 	Create(ctx context.Context, flight *domain.Flight) error
 	Update(ctx context.Context, flight *domain.Flight) error
-	Touch(ctx context.Context, flightID string) error
-	FindRefreshDue(ctx context.Context, fromDate, toDate string, checkedBefore time.Time, limit int) ([]*domain.Flight, error)
+	RecordStatusCheck(ctx context.Context, flightID string, checks int) error
+	FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*domain.Flight, error)
 	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
 	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
 }
@@ -68,6 +69,7 @@ type Service struct {
 	userRepo   UserFlightRepository
 	provider   Provider
 	backfiller CacheBackfiller
+	coverage   LiveCoverage
 	log        *logger.ComponentLogger
 }
 
@@ -226,14 +228,17 @@ func (s *Service) searchCached(ctx context.Context, cached []*domain.Flight, fli
 	return cached
 }
 
-// anyStale reports whether a cached flight is worth re-fetching: its status
-// can still change, it was last checked a while ago, and the provider still
-// serves its date.
+// anyStale reports whether a search should re-fetch cached flights. That is
+// only worth a provider call around the day of travel, when gates, times and
+// status actually change: a flight weeks away, or long past, is served from
+// the cache however old the entry is.
 func anyStale(flights []*domain.Flight, now time.Time) bool {
-	oldestDate := now.AddDate(0, 0, -providerHistoryDays).Format(time.DateOnly)
+	from := now.AddDate(0, 0, -searchRefreshDaysBefore).Format(time.DateOnly)
+	to := now.AddDate(0, 0, searchRefreshDaysAhead).Format(time.DateOnly)
 
 	for _, f := range flights {
-		if !f.Status.IsFinal() && now.Sub(f.UpdatedAt) > searchRefreshAge && f.FlightDate >= oldestDate {
+		changing := !f.Status.IsFinal() && f.FlightDate >= from && f.FlightDate <= to
+		if changing && now.Sub(f.UpdatedAt) > searchRefreshAge {
 			return true
 		}
 	}
@@ -288,6 +293,7 @@ func (s *Service) storeProviderFlight(ctx context.Context, flight *domain.Flight
 	if err == nil {
 		flight.ID = cached.ID
 		flight.CreatedAt = cached.CreatedAt
+		flight.StatusChecks = cached.StatusChecks
 
 		err = s.cache.Update(ctx, flight)
 		if err != nil {

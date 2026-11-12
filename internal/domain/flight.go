@@ -115,6 +115,9 @@ type Flight struct {
 	Provider            string              `json:"provider"                  example:"aerodatabox"`
 	CreatedAt           time.Time           `json:"createdAt"                 example:"2026-03-17T12:00:00Z"`
 	UpdatedAt           time.Time           `json:"updatedAt"                 example:"2026-03-17T12:00:00Z"`
+
+	// StatusChecks counts background status checks spent on this flight.
+	StatusChecks int `json:"-" gorm:"column:status_checks;not null;default:0"`
 }
 
 // UserFlight represents the link between a user and a cached flight.

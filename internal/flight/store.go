@@ -33,25 +33,31 @@ func (s *CacheStore) Update(ctx context.Context, flight *domain.Flight) error {
 	return s.db.WithContext(ctx).Save(flight).Error
 }
 
-// Touch marks a cached flight as checked without changing its data.
-func (s *CacheStore) Touch(ctx context.Context, flightID string) error {
+// RecordStatusCheck stores how many status checks a flight has had and when
+// the last one was, without changing its data.
+func (s *CacheStore) RecordStatusCheck(ctx context.Context, flightID string, checks int) error {
 	return s.db.WithContext(ctx).Model(&domain.Flight{}).
 		Where("id = ?", flightID).
-		Update("updated_at", time.Now()).Error
+		Updates(map[string]any{"status_checks": checks, "updated_at": time.Now()}).Error
 }
 
-// FindRefreshDue returns flights in a user's collection whose status can still
-// change, dated between fromDate and toDate, and not checked since checkedBefore.
-func (s *CacheStore) FindRefreshDue(ctx context.Context, fromDate, toDate string, checkedBefore time.Time, limit int) ([]*domain.Flight, error) {
+// FindRefreshDue returns flights in a user's collection that should have
+// arrived, still have a non-final status, and are due for their next check.
+func (s *CacheStore) FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*domain.Flight, error) {
 	var flights []*domain.Flight
 
 	err := s.db.WithContext(ctx).
 		Where("status IN ?", []domain.FlightStatus{domain.FlightStatusScheduled, domain.FlightStatusActive}).
-		Where("flight_date BETWEEN ? AND ?", fromDate, toDate).
-		Where("updated_at < ?", checkedBefore).
+		Where("flight_date BETWEEN ? AND ?", due.FromDate, due.ToDate).
 		Where("id IN (?)", s.db.Table("user_flights").Select("flight_id")).
+		// Should have arrived: by its scheduled arrival, or by date when no time is known.
+		Where("(arr_scheduled_utc IS NOT NULL AND arr_scheduled_utc < ?) OR (arr_scheduled_utc IS NULL AND flight_date < ?)",
+			due.ArrivedBefore, due.ToDate).
+		// First check at once, later checks after growing waits, then give up.
+		Where("status_checks = 0 OR (status_checks = 1 AND updated_at < ?) OR (status_checks = 2 AND updated_at < ?)",
+			due.SecondCheckBefore, due.ThirdCheckBefore).
 		Order("updated_at").
-		Limit(limit).
+		Limit(due.Limit).
 		Find(&flights).Error
 	if err != nil {
 		return nil, err
