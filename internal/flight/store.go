@@ -75,19 +75,19 @@ func (s *CacheStore) FindByRoute(ctx context.Context, flightNumber, flightDate, 
 	return &flight, nil
 }
 
-// FindByDateAndRoute retrieves a cached flight by date and route, ignoring the flight number.
-func (s *CacheStore) FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) (*domain.Flight, error) {
-	var flight domain.Flight
+// FindByDateAndRoute retrieves all cached flights on a date and route, whatever their flight number.
+func (s *CacheStore) FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error) {
+	var flights []*domain.Flight
 
 	err := s.db.WithContext(ctx).
 		Where("flight_date = ? AND dep_airport_iata = ? AND arr_airport_iata = ?",
 			flightDate, depIATA, arrIATA).
-		First(&flight).Error
+		Find(&flights).Error
 	if err != nil {
 		return nil, err
 	}
 
-	return &flight, nil
+	return flights, nil
 }
 
 // FindByNumberAndDate retrieves cached flights by number and date.

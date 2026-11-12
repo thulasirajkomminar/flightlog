@@ -41,7 +41,7 @@ type FlightLinker interface {
 type FlightCacher interface {
 	Create(ctx context.Context, flight *domain.Flight) error
 	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
-	FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error)
 }
 
 // AirportLookup resolves airport details and route distances.
@@ -232,13 +232,59 @@ func (s *Service) findCached(ctx context.Context, entry *ImportEntry) (string, b
 		return cached.ID, true
 	}
 
-	// Fallback: match by date+route only (handles ICAO/IATA flight number differences).
-	cached, err = s.cacher.FindByDateAndRoute(ctx, entry.Date, entry.DepIATA, entry.ArrIATA)
-	if err == nil && cached != nil {
-		return cached.ID, true
+	// Fallback: the same flight may be cached under its ICAO number ("KLM1001")
+	// while the file has the IATA one ("KL1001"), or the other way round.
+	candidates, err := s.cacher.FindByDateAndRoute(ctx, entry.Date, entry.DepIATA, entry.ArrIATA)
+	if err != nil {
+		return "", false
+	}
+
+	for _, c := range candidates {
+		if sameFlightNumber(entry.FlightNumber, c.Number) {
+			return c.ID, true
+		}
 	}
 
 	return "", false
+}
+
+const (
+	iataPrefixLen = 2
+	icaoPrefixLen = 3
+)
+
+// sameFlightNumber reports whether two flight numbers denote the same flight,
+// allowing one to use the 3-letter ICAO airline prefix and the other the
+// 2-character IATA prefix. Different airlines on the same route and day do not match.
+func sameFlightNumber(a, b string) bool {
+	a = domain.NormalizeFlightNumber(a)
+	b = domain.NormalizeFlightNumber(b)
+
+	if a == b {
+		return true
+	}
+
+	return icaoMatchesIATA(a, b) || icaoMatchesIATA(b, a)
+}
+
+// icaoMatchesIATA reports whether icao ("KLM1001") and iata ("KL1001") share
+// the same numeric part.
+func icaoMatchesIATA(icao, iata string) bool {
+	if len(icao) <= icaoPrefixLen || len(iata) <= iataPrefixLen || !isLetters(icao[:icaoPrefixLen]) {
+		return false
+	}
+
+	return icao[icaoPrefixLen:] == iata[iataPrefixLen:]
+}
+
+func isLetters(s string) bool {
+	for i := range len(s) {
+		if s[i] < 'A' || s[i] > 'Z' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (s *Service) tryEnrich(
