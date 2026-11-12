@@ -9,17 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/config"
-	"github.com/thulasirajkomminar/flightlog/internal/domain"
+	"github.com/thulasirajkomminar/flightlog/internal/database"
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
 	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
@@ -31,7 +28,6 @@ import (
 
 const (
 	shutdownTimeout    = 10 * time.Second
-	dataDirPerm        = 0o750
 	serverReadTimeout  = 30 * time.Second
 	serverWriteTimeout = 10*time.Minute + 30*time.Second
 	serverIdleTimeout  = 120 * time.Second
@@ -132,31 +128,9 @@ func closeDatabase(db *gorm.DB, appLogger *logger.ComponentLogger) {
 }
 
 func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.DB, error) {
-	if dir := filepath.Dir(cfg.Database.Path); dir != "." {
-		err := os.MkdirAll(dir, dataDirPerm)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create data directory: %w", err)
-		}
-	}
-
-	db, err := gorm.Open(sqlite.Open(cfg.Database.Path+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{
-		Logger: gormlogger.New(log.New(os.Stderr, "", log.LstdFlags), gormlogger.Config{
-			IgnoreRecordNotFoundError: true,
-		}),
-	})
+	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to run database migration: %w", err)
-	}
-
-	// Route distances are computed from coordinates now; drop the old cache table.
-	err = db.Migrator().DropTable("distance_cache")
-	if err != nil {
-		return nil, fmt.Errorf("failed to drop legacy distance cache: %w", err)
+		return nil, fmt.Errorf("failed to initialise database: %w", err)
 	}
 
 	appLogger.Info("Database migration completed")
