@@ -4,10 +4,12 @@ import {
   AirplaneTakeoffIcon,
   CaretDownIcon,
   CheckIcon,
+  PencilSimpleIcon,
   PlusIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
 
+import { ManualFlightDialog } from "~/components/manual-flight-dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -133,12 +135,16 @@ export function FlightCard({
   flight,
   onAdd,
   onDelete,
+  onEdited,
   isAdding,
   isAdded,
 }: {
   flight: Flight
   onAdd?: (flight: Flight) => void
   onDelete?: (id: string) => void
+  // Called after the user edits this flight; enables the edit button for
+  // flights they imported or added by hand.
+  onEdited?: () => void
   isAdding?: boolean
   isAdded?: boolean
 }) {
@@ -233,6 +239,22 @@ export function FlightCard({
             <CheckIcon className="size-5" />
             Added
           </Button>
+        )}
+        {onEdited && flight.editable && (
+          <ManualFlightDialog
+            flight={flight}
+            onSaved={onEdited}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                aria-label="Edit flight"
+              >
+                <PencilSimpleIcon className="size-4" />
+              </Button>
+            }
+          />
         )}
         {onDelete && (
           <AlertDialog>

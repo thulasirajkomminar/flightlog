@@ -90,6 +90,8 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 				r.Get("/flights/stats", deps.FlightHandler.GetStats)
 				r.Get("/flights/routes", deps.FlightHandler.GetRoutes)
 				r.Get("/flights", deps.FlightHandler.ListFlights)
+				r.Post("/flights", deps.FlightHandler.CreateFlight)
+				r.Put("/flights/{id}", deps.FlightHandler.UpdateFlight)
 				r.Get("/flights/export", deps.FlightHandler.ExportFlights)
 				r.Get("/flights/{id}", deps.FlightHandler.GetFlight)
 				r.Post("/flights/{id}/add", deps.FlightHandler.AddFlight)

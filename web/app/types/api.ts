@@ -40,9 +40,22 @@ export interface Flight {
     feet: number
   }
   lastUpdatedUtc?: string
+  // True for flights the signed-in user imported or added by hand.
+  editable?: boolean
   provider: string
   createdAt: string
   updatedAt: string
+}
+
+// What a user enters to add or change a flight by hand.
+export interface ManualFlightInput {
+  number: string
+  date: string
+  departureIata: string
+  arrivalIata: string
+  airlineName: string
+  aircraftModel: string
+  status: string
 }
 
 export interface Movement {

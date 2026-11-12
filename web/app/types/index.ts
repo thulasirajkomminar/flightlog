@@ -7,6 +7,7 @@ export type {
   ImportJob,
   ImportPreview,
   ImportResult,
+  ManualFlightInput,
   Movement,
   RouteAirport,
   User,

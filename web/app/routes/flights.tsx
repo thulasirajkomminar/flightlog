@@ -118,6 +118,7 @@ export default function FlightsPage() {
                             key={flight.id}
                             flight={flight}
                             onDelete={deleteFlight}
+                            onEdited={refresh}
                           />
                         ))}
                       </ItemGroup>

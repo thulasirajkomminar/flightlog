@@ -1,6 +1,7 @@
 import { MagnifyingGlass } from "@phosphor-icons/react"
 
 import { FlightCard } from "~/components/flight-card"
+import { ManualFlightDialog } from "~/components/manual-flight-dialog"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -97,6 +98,19 @@ export default function SearchPage() {
                 {isSearching ? "Searching..." : "Search"}
               </Button>
             </form>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Can&apos;t find it, or is it an older flight?{" "}
+              <ManualFlightDialog
+                trigger={
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    Add it by hand
+                  </button>
+                }
+              />
+            </p>
           </CardContent>
         </Card>
 

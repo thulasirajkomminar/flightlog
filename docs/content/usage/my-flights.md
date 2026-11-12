@@ -45,3 +45,9 @@ The top-right of the page holds the two data-portability buttons:
 - **Export** — dump your entire logbook to a CSV file.
 
 Both are covered in detail on the [Import & Export](import-export.md) page.
+
+## Editing a flight
+
+Flights you [added by hand](search-and-add.md#adding-a-flight-by-hand) or imported from a CSV have a pencil button next to the delete button. It opens the same form, so you can fix a date, a flight number or an airport.
+
+Flights that came from AeroDataBox can't be edited — that data is shared with every account on the instance. If one is wrong, delete it and add the flight by hand instead.

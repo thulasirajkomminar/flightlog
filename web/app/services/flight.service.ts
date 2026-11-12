@@ -6,6 +6,7 @@ import type {
   FlightListResponse,
   FlightRoute,
   FlightStats,
+  ManualFlightInput,
 } from "~/types"
 
 export const flightService = {
@@ -60,6 +61,16 @@ export const flightService = {
 
   async addFlight(id: string): Promise<void> {
     return api.post(API_ENDPOINTS.FLIGHTS.ADD(id))
+  },
+
+  // Adds a flight typed in by hand to the user's collection.
+  async createManual(input: ManualFlightInput): Promise<Flight> {
+    return api.post<Flight>(API_ENDPOINTS.FLIGHTS.LIST, input)
+  },
+
+  // Changes a flight the user imported or added by hand.
+  async updateManual(id: string, input: ManualFlightInput): Promise<Flight> {
+    return api.put<Flight>(API_ENDPOINTS.FLIGHTS.BY_ID(id), input)
   },
 
   async remove(id: string): Promise<void> {

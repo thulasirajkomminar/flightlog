@@ -3,6 +3,7 @@ package flight
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,6 +23,7 @@ const (
 	errFlightIDRequired = "flight id is required"
 	errInvalidDate      = "invalid date format, expected YYYY-MM-DD"
 	errInternal         = "internal server error"
+	paramID             = "id"
 
 	errProviderUnavailable = "flight data provider is unavailable, please try again later"
 	errProviderQuota       = "the flight data API quota is used up for now, please try again later"
@@ -105,7 +107,7 @@ func respondSearchError(w http.ResponseWriter, err error) {
 func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
 
-	id := chi.URLParam(r, "id")
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
@@ -122,11 +124,64 @@ func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "Flight added successfully"})
 }
 
-// respondCollectionError maps errors from adding or removing a flight.
+// CreateFlight adds a flight the user typed in by hand.
+func (h *Handler) CreateFlight(w http.ResponseWriter, r *http.Request) {
+	in, ok := decodeManual(w, r)
+	if !ok {
+		return
+	}
+
+	flight, err := h.flightService.CreateManual(r.Context(), api.GetUser(r).UserID, in)
+	if err != nil {
+		respondCollectionError(w, err)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusCreated, flight)
+}
+
+// UpdateFlight changes a flight the user imported or added by hand.
+func (h *Handler) UpdateFlight(w http.ResponseWriter, r *http.Request) {
+	in, ok := decodeManual(w, r)
+	if !ok {
+		return
+	}
+
+	flight, err := h.flightService.UpdateManual(r.Context(), api.GetUser(r).UserID, chi.URLParam(r, paramID), in)
+	if err != nil {
+		respondCollectionError(w, err)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, flight)
+}
+
+func decodeManual(w http.ResponseWriter, r *http.Request) (*ManualFlight, bool) {
+	var in ManualFlight
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&in)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, "invalid request body")
+
+		return nil, false
+	}
+
+	return &in, true
+}
+
+// respondCollectionError maps errors from changing a user's collection.
 func respondCollectionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrFlightAlreadyAdded):
 		api.RespondError(w, http.StatusConflict, domain.ErrFlightAlreadyAdded.Error())
+	case errors.Is(err, domain.ErrValidation):
+		api.RespondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrNotEditable):
+		api.RespondError(w, http.StatusForbidden, ErrNotEditable.Error())
 	case errors.Is(err, domain.ErrFlightNotFound):
 		api.RespondError(w, http.StatusNotFound, domain.ErrFlightNotFound.Error())
 	default:
@@ -214,7 +269,7 @@ func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
 
-	id := chi.URLParam(r, "id")
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
@@ -340,7 +395,7 @@ func formatTimePtr(t *time.Time) string {
 func (h *Handler) DeleteFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
 
-	id := chi.URLParam(r, "id")
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
