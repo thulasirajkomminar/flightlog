@@ -1,26 +1,21 @@
+import { api } from "~/lib/api"
 import { API_ENDPOINTS } from "~/constants"
 
 import type { ImportPreview, ImportResult } from "~/types"
 
+function fileForm(file: File): FormData {
+  const form = new FormData()
+  form.append("file", file)
+  return form
+}
+
 export const importService = {
   async preview(source: string, file: File): Promise<ImportPreview> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    const response = await fetch(
-      `${API_ENDPOINTS.IMPORT.PREVIEW}?source=${encodeURIComponent(source)}`,
-      {
-        method: "POST",
-        body: formData,
-      }
+    const params = new URLSearchParams({ source })
+    return api.upload<ImportPreview>(
+      `${API_ENDPOINTS.IMPORT.PREVIEW}?${params}`,
+      fileForm(file)
     )
-
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to preview import")
-    }
-
-    return response.json()
   },
 
   async importFlights(
@@ -28,31 +23,10 @@ export const importService = {
     file: File,
     enrich: boolean
   ): Promise<ImportResult> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    const params = new URLSearchParams({
-      source,
-      enrich: String(enrich),
-    })
-
-    const response = await fetch(`${API_ENDPOINTS.IMPORT.IMPORT}?${params}`, {
-      method: "POST",
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({
-        error: `HTTP ${response.status}: ${response.statusText}`,
-      }))
-      throw new Error(data.error || "Failed to import flights")
-    }
-
-    const text = await response.text()
-    if (!text) {
-      throw new Error("Server returned an empty response")
-    }
-
-    return JSON.parse(text) as ImportResult
+    const params = new URLSearchParams({ source, enrich: String(enrich) })
+    return api.upload<ImportResult>(
+      `${API_ENDPOINTS.IMPORT.IMPORT}?${params}`,
+      fileForm(file)
+    )
   },
 }

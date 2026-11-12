@@ -67,11 +67,7 @@ export const flightService = {
   },
 
   async exportFlights(): Promise<void> {
-    const response = await fetch(API_ENDPOINTS.FLIGHTS.EXPORT)
-    if (!response.ok) {
-      throw new Error("Failed to export flights")
-    }
-    const blob = await response.blob()
+    const blob = await api.download(API_ENDPOINTS.FLIGHTS.EXPORT)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url

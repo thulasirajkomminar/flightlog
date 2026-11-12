@@ -13,19 +13,15 @@ export class ApiError extends Error {
 export const UNAUTHORIZED_EVENT = "flightlog:unauthorized"
 
 class ApiClient {
-  private async request<T>(
-    path: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const mergedOptions: RequestInit = {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    }
+  // Sends a request and returns the raw response, throwing ApiError for any
+  // non-2xx status. JSON is the default body type; FormData sets its own.
+  private async send(path: string, options: RequestInit): Promise<Response> {
+    const headers =
+      options.body instanceof FormData
+        ? options.headers
+        : { "Content-Type": "application/json", ...options.headers }
 
-    const response = await fetch(path, mergedOptions)
+    const response = await fetch(path, { ...options, headers })
 
     if (response.status === 401) {
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
@@ -38,6 +34,12 @@ class ApiClient {
 
       throw new ApiError(error.error || "Request failed", response.status)
     }
+
+    return response
+  }
+
+  private async request<T>(path: string, options: RequestInit): Promise<T> {
+    const response = await this.send(path, options)
 
     if (
       response.status === 204 ||
@@ -69,6 +71,15 @@ class ApiClient {
 
   async delete<T = unknown>(path: string): Promise<T> {
     return this.request<T>(path, { method: "DELETE" })
+  }
+
+  async upload<T = unknown>(path: string, form: FormData): Promise<T> {
+    return this.request<T>(path, { method: "POST", body: form })
+  }
+
+  async download(path: string): Promise<Blob> {
+    const response = await this.send(path, { method: "GET" })
+    return response.blob()
   }
 }
 
