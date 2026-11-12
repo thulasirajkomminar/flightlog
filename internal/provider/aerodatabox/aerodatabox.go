@@ -469,8 +469,9 @@ func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, dat
 
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
-	// The API answers 204 or 404 when it knows no such flight on that date.
-	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
+	// The API answers 204 when it knows no such flight on that date. Every
+	// other non-200 status, including 404, is a failure.
+	if resp.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
 
