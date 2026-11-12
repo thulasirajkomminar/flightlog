@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // FlightStatus is an enum of possible flight lifecycle states.
@@ -74,13 +75,14 @@ type Movement struct {
 	BaggageBelt   string   `json:"baggageBelt,omitempty" example:"3"`
 }
 
-// GreatCircleDistance holds the route distance in multiple units.
+// GreatCircleDistance holds the route distance in multiple units. Only
+// kilometres are stored; the other units are derived when a flight is loaded.
 type GreatCircleDistance struct {
-	Meter float64 `json:"meter" example:"3223194.53"`
-	Km    float64 `json:"km"    example:"3223.19"`
-	Mile  float64 `json:"mile"  example:"2002.8"`
-	Nm    float64 `json:"nm"    example:"1740.39"`
-	Feet  float64 `json:"feet"  example:"10574785.22"`
+	Meter float64 `json:"meter" gorm:"-"         example:"3223194.53"`
+	Km    float64 `json:"km"    gorm:"column:km" example:"3223.19"`
+	Mile  float64 `json:"mile"  gorm:"-"         example:"2002.8"`
+	Nm    float64 `json:"nm"    gorm:"-"         example:"1740.39"`
+	Feet  float64 `json:"feet"  gorm:"-"         example:"10574785.22"`
 }
 
 // FlightAircraft holds registration and model info for an aircraft.
@@ -172,6 +174,13 @@ type Route struct {
 	Departure RouteAirport `json:"departure"`
 	Arrival   RouteAirport `json:"arrival"`
 	Flights   int          `json:"flights"`
+}
+
+// AfterFind fills in the distance units that are not stored.
+func (f *Flight) AfterFind(*gorm.DB) error {
+	f.GreatCircleDistance = DistanceFromKm(f.GreatCircleDistance.Km)
+
+	return nil
 }
 
 // GenerateID creates a UUID for the flight if not already set.

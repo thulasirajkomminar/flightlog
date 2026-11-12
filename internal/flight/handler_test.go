@@ -14,7 +14,7 @@ func searchRequest(t *testing.T, h *Handler, query string) *httptest.ResponseRec
 	t.Helper()
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/flights/search?"+query, http.NoBody)
-	req = req.WithContext(api.SetUser(req.Context(), &api.UserClaims{UserID: "user-1"}))
+	req = req.WithContext(api.SetUser(req.Context(), &api.UserClaims{UserID: testUser}))
 	rec := httptest.NewRecorder()
 
 	h.SearchFlights(rec, req)

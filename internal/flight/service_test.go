@@ -17,6 +17,8 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 )
 
+const testUser = "user-1"
+
 var errProviderDown = errors.New("provider down")
 
 func TestMain(m *testing.M) {
@@ -223,7 +225,7 @@ func arrivedFlight(t *testing.T, svc *Service, db *gorm.DB, now time.Time, numbe
 	f.Arrival.ScheduledTime.UTC = &arrived
 	insertFlight(t, db, f, now.Add(-12*time.Hour))
 
-	err := svc.AddFlight(context.Background(), "user-1", f.ID)
+	err := svc.AddFlight(context.Background(), testUser, f.ID)
 	if err != nil {
 		t.Fatalf("AddFlight: %v", err)
 	}
@@ -250,7 +252,7 @@ func TestRefreshDueUpdatesArrivedFlight(t *testing.T) {
 		t.Fatalf("RefreshDue updated = %d, want 1", updated)
 	}
 
-	got, err := svc.GetFlight(context.Background(), "user-1", linked.ID)
+	got, err := svc.GetFlight(context.Background(), testUser, linked.ID)
 	if err != nil {
 		t.Fatalf("GetFlight: %v", err)
 	}
@@ -412,13 +414,13 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 	for _, f := range flights {
 		insertFlight(t, db, f, old)
 
-		err := svc.AddFlight(ctx, "user-1", f.ID)
+		err := svc.AddFlight(ctx, testUser, f.ID)
 		if err != nil {
 			t.Fatalf("AddFlight: %v", err)
 		}
 	}
 
-	routes, err := svc.GetRoutes(ctx, "user-1")
+	routes, err := svc.GetRoutes(ctx, testUser)
 	if err != nil {
 		t.Fatalf("GetRoutes: %v", err)
 	}
@@ -473,13 +475,13 @@ func TestGetStatsCountsOnlyFlownFlights(t *testing.T) {
 		f.Arrival.ScheduledTime.UTC = &arr
 		insertFlight(t, db, f, time.Now())
 
-		err := svc.AddFlight(ctx, "user-1", f.ID)
+		err := svc.AddFlight(ctx, testUser, f.ID)
 		if err != nil {
 			t.Fatalf("AddFlight: %v", err)
 		}
 	}
 
-	got, err := svc.GetStats(ctx, "user-1")
+	got, err := svc.GetStats(ctx, testUser)
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
@@ -507,7 +509,7 @@ func TestListFlightsPagesAreStableForSameDayFlights(t *testing.T) {
 		f.Departure.ScheduledTime.UTC = &dep
 		insertFlight(t, db, f, time.Now())
 
-		err := svc.AddFlight(ctx, "user-1", f.ID)
+		err := svc.AddFlight(ctx, testUser, f.ID)
 		if err != nil {
 			t.Fatalf("AddFlight: %v", err)
 		}
@@ -516,7 +518,7 @@ func TestListFlightsPagesAreStableForSameDayFlights(t *testing.T) {
 	var got []string
 
 	for _, offset := range []int{0, 2} {
-		page, total, err := svc.ListFlights(ctx, &domain.FlightSearchCriteria{UserID: "user-1", Limit: 2, Offset: offset})
+		page, total, err := svc.ListFlights(ctx, &domain.FlightSearchCriteria{UserID: testUser, Limit: 2, Offset: offset})
 		if err != nil || total != 4 {
 			t.Fatalf("ListFlights: total = %d, err = %v", total, err)
 		}
@@ -546,11 +548,11 @@ func TestAddAndDeleteFlightErrors(t *testing.T) {
 		run  func() error
 		want error
 	}{
-		{"add unknown flight", func() error { return svc.AddFlight(ctx, "user-1", "no-such-id") }, domain.ErrFlightNotFound},
-		{"add flight", func() error { return svc.AddFlight(ctx, "user-1", f.ID) }, nil},
-		{"add it again", func() error { return svc.AddFlight(ctx, "user-1", f.ID) }, domain.ErrFlightAlreadyAdded},
-		{"delete flight", func() error { return svc.DeleteFlight(ctx, "user-1", f.ID) }, nil},
-		{"delete it again", func() error { return svc.DeleteFlight(ctx, "user-1", f.ID) }, domain.ErrFlightNotFound},
+		{"add unknown flight", func() error { return svc.AddFlight(ctx, testUser, "no-such-id") }, domain.ErrFlightNotFound},
+		{"add flight", func() error { return svc.AddFlight(ctx, testUser, f.ID) }, nil},
+		{"add it again", func() error { return svc.AddFlight(ctx, testUser, f.ID) }, domain.ErrFlightAlreadyAdded},
+		{"delete flight", func() error { return svc.DeleteFlight(ctx, testUser, f.ID) }, nil},
+		{"delete it again", func() error { return svc.DeleteFlight(ctx, testUser, f.ID) }, domain.ErrFlightNotFound},
 	}
 
 	for _, step := range steps {
@@ -661,5 +663,37 @@ func TestRefreshDueStopsWhenQuotaIsLow(t *testing.T) {
 
 	if provider.calls != 0 {
 		t.Errorf("provider calls = %d, want 0 while the quota is low", provider.calls)
+	}
+}
+
+func TestDistanceUnitsAreDerivedFromKilometres(t *testing.T) {
+	t.Parallel()
+
+	svc, db := newTestService(t, &fakeProvider{})
+	ctx := context.Background()
+
+	f := testFlight("KL1001", "2026-01-01", domain.FlightStatusLanded)
+	f.GreatCircleDistance = domain.GreatCircleDistance{Km: 370}
+	insertFlight(t, db, f, time.Now())
+
+	err := svc.AddFlight(ctx, testUser, f.ID)
+	if err != nil {
+		t.Fatalf("AddFlight: %v", err)
+	}
+
+	want := domain.DistanceFromKm(370)
+
+	single, err := svc.GetFlight(ctx, testUser, f.ID)
+	if err != nil || single.GreatCircleDistance != want {
+		t.Errorf("GetFlight distance = %+v, err %v; want %+v", single.GreatCircleDistance, err, want)
+	}
+
+	list, _, err := svc.ListFlights(ctx, &domain.FlightSearchCriteria{UserID: testUser, Limit: 10})
+	if err != nil || len(list) != 1 || list[0].GreatCircleDistance != want {
+		t.Errorf("ListFlights = %+v, err %v; want one flight with distance %+v", list, err, want)
+	}
+
+	if db.Migrator().HasColumn(&domain.Flight{}, "gcd_mile") {
+		t.Error("miles are stored; only kilometres should be")
 	}
 }

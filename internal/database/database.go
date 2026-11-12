@@ -62,19 +62,27 @@ func migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to drop legacy distance cache: %w", err)
 	}
 
-	return dropLegacyRawData(db)
+	return dropLegacyFlightColumns(db)
 }
 
-// dropLegacyRawData removes the column that used to hold the full provider
-// response for every flight. It was never read.
-func dropLegacyRawData(db *gorm.DB) error {
-	if !db.Migrator().HasColumn(&domain.Flight{}, "raw_data") {
-		return nil
-	}
+// legacyFlightColumns are columns of the flights table that are no longer
+// used: the full provider response, which was never read, and the distance in
+// units that are now derived from kilometres.
+func legacyFlightColumns() []string {
+	return []string{"raw_data", "gcd_meter", "gcd_mile", "gcd_nm", "gcd_feet"}
+}
 
-	err := db.Exec("ALTER TABLE flights DROP COLUMN raw_data").Error
-	if err != nil {
-		return fmt.Errorf("failed to drop legacy raw_data column: %w", err)
+func dropLegacyFlightColumns(db *gorm.DB) error {
+	for _, column := range legacyFlightColumns() {
+		if !db.Migrator().HasColumn(&domain.Flight{}, column) {
+			continue
+		}
+
+		// The names come from the fixed list above, never from user input.
+		err := db.Exec("ALTER TABLE flights DROP COLUMN " + column).Error
+		if err != nil {
+			return fmt.Errorf("failed to drop legacy %s column: %w", column, err)
+		}
 	}
 
 	return nil
