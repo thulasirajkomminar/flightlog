@@ -4,6 +4,23 @@ The quickstart gets you a working Flightlog on `localhost:8080`. This page cover
 
 The two recipes below are the ones I run myself. Pick the one that matches your existing setup.
 
+## Where to run it
+
+Flightlog is built for a **homelab**: one person or a household, on hardware you control. It is not hardened to be an open service on the public internet.
+
+!!! warning "Keep it on a private network"
+    The recommended setup is to run Flightlog on your home network and reach it from outside through a private overlay network such as [Tailscale](https://tailscale.com), [WireGuard](https://www.wireguard.com) or a similar VPN — not through a port opened to the internet.
+
+That matters for two reasons. Anyone who can reach the sign-in page can create an account unless you close sign-ups, and every account's searches spend **your** AeroDataBox quota. And while the app has the usual protections (hashed passwords, rate limits, security headers), it has no email verification, no admin tools and no monitoring — things a public service needs.
+
+Whichever recipe you pick, do these three things once it is running:
+
+1. **Create your account(s), then close sign-ups** by setting `AUTH_REGISTRATION_ENABLED=false` (see [Configuration](configuration.md#optional)).
+2. **Use a strong `AUTH_JWT_SECRET`** — `openssl rand -base64 32`. Flightlog warns in its log if it is too short.
+3. **Back up the data directory.** Everything lives in one SQLite file; see the [persistence checklist](#persistence-checklist) below.
+
+If you do put it behind a public reverse proxy anyway (Recipe 2), also set `SERVER_TRUSTED_PROXIES` to your proxy's network. Without it every visitor looks like the proxy, so the sign-in rate limit is shared by everyone.
+
 ## Recipe 1 — Plain Docker, single port
 
 The simplest possible deployment: Flightlog listening on a port, you handle TLS some other way (or you don't need it because it's only on your LAN).

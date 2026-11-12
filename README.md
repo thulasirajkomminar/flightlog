@@ -10,6 +10,9 @@
 
 A simple app to log and manage your flight history.
 
+> [!NOTE]
+> Flightlog is built for a homelab: run it on a private network and reach it through Tailscale, WireGuard or a similar VPN rather than exposing it to the public internet. See the [deployment guide](docs/content/getting-started/deployment.md#where-to-run-it).
+
 ## Screenshots
 
 ![Login](docs/content/assets/screenshots/01-login-page.png)
