@@ -18,10 +18,13 @@ type Provider interface {
 	GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error)
 }
 
-// CachedLookup decorates a Provider with DB-backed caching and rate limiting.
+// CachedLookup resolves airports from the local cache, then the bundled
+// database, and only then from the Provider's API.
 type CachedLookup struct {
 	store    *Store
 	provider Provider
+	// throttle spaces out API calls.
+	throttle time.Duration
 	log      *logger.ComponentLogger
 }
 
@@ -30,18 +33,25 @@ func NewCachedLookup(store *Store, provider Provider) *CachedLookup {
 	return &CachedLookup{
 		store:    store,
 		provider: provider,
+		throttle: apiThrottleDelay,
 		log:      logger.NewComponentLogger("airport_cache"),
 	}
 }
 
-// GetAirportByIATA returns airport data, consulting the cache before the API.
+// GetAirportByIATA returns airport data. The cache is asked first because it
+// holds what the provider reported, which is the most detailed; the bundled
+// database answers nearly everything else without spending an API call.
 func (c *CachedLookup) GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error) {
 	a, err := c.store.FindAirport(ctx, iata)
 	if err == nil {
 		return a, nil
 	}
 
-	time.Sleep(apiThrottleDelay)
+	if bundled, ok := Bundled(iata); ok {
+		return bundled, nil
+	}
+
+	time.Sleep(c.throttle)
 
 	a, err = c.provider.GetAirportByIATA(ctx, iata)
 	if err != nil {

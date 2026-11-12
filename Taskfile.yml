@@ -40,6 +40,10 @@ tasks:
     desc: Generate Go client from OpenAPI specs
     cmd: go generate ./internal/provider/aerodatabox/api/...
 
+  airports:
+    desc: Refresh the bundled airport database from OurAirports
+    cmd: go run ./cmd/airports
+
   api:
     desc: Run Go API server
     cmd: go run ./cmd/api

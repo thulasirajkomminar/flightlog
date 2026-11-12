@@ -43,3 +43,5 @@ web/build/
 !web/app/lib/
 
 .overmind.sock
+
+!internal/airport/data
