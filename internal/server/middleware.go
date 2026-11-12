@@ -153,7 +153,7 @@ func SecurityHeaders(scriptHashes []string) func(http.Handler) http.Handler {
 	csp := "default-src 'self'; " +
 		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data: https://*.basemaps.cartocdn.com; " +
+		"img-src 'self' data: https://server.arcgisonline.com; " +
 		"font-src 'self' data:; " +
 		"connect-src 'self'; " +
 		"base-uri 'self'; " +

@@ -59,8 +59,11 @@ interface FlightMapProps {
 
 export default function FlightMap({ flights }: FlightMapProps) {
   const mapRef = useRef<L.Map | null>(null)
+  // Keyless dark basemap (Esri Dark Gray Canvas). The tile host must stay
+  // allowed in the CSP img-src directive (internal/server/middleware.go) or
+  // tiles are blocked in production builds.
   const mapTileUrl =
-    "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 
   const routes = flights
     .filter(
@@ -121,9 +124,12 @@ export default function FlightMap({ flights }: FlightMapProps) {
       className="h-full w-full"
       scrollWheelZoom={true}
       zoomControl={false}
-      attributionControl={false}
     >
-      <TileLayer url={mapTileUrl} />
+      <TileLayer
+        url={mapTileUrl}
+        maxNativeZoom={16}
+        attribution="Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"
+      />
       <ZoomControl />
 
       {routes.map((route) => (
