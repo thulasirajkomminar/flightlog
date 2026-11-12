@@ -1,5 +1,5 @@
 # Build frontend
-FROM node:25.9.0-alpine AS frontend-builder
+FROM node:26.13.1-alpine AS frontend-builder
 
 RUN npm install -g pnpm
 
@@ -12,7 +12,7 @@ COPY web/ .
 RUN pnpm build
 
 # Build backend
-FROM golang:1.27.3-alpine AS backend-builder
+FROM golang:1.27.4-alpine AS backend-builder
 
 WORKDIR /app
 
