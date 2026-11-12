@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
     SEARCH: "/api/v1/flights/search",
     STATS: "/api/v1/flights/stats",
     ROUTES: "/api/v1/flights/routes",
+    BREAKDOWN: "/api/v1/flights/stats/breakdown",
     EXPORT: "/api/v1/flights/export",
     BY_ID: (id: string) => `/api/v1/flights/${id}`,
     ADD: (id: string) => `/api/v1/flights/${id}/add`,

@@ -58,6 +58,7 @@ type UserFlightRepository interface {
 	GetYears(ctx context.Context, userID string) ([]int, error)
 	GetStats(ctx context.Context, userID string) (*domain.FlightStats, error)
 	GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error)
+	GetBreakdown(ctx context.Context, userID string) (*domain.FlightBreakdown, error)
 }
 
 // Provider defines the contract for flight data providers.
@@ -222,6 +223,16 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*domain.FlightSt
 	}
 
 	return stats, nil
+}
+
+// GetBreakdown returns per-year totals and top routes and airlines for a user.
+func (s *Service) GetBreakdown(ctx context.Context, userID string) (*domain.FlightBreakdown, error) {
+	breakdown, err := s.userRepo.GetBreakdown(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("breakdown for user %s: %w", userID, err)
+	}
+
+	return breakdown, nil
 }
 
 // ProviderQuota returns what the provider last reported about the API quota.

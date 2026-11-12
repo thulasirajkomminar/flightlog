@@ -14,6 +14,8 @@ const (
 	jfk       = "JFK"
 	mayFourth = "2019-05-04"
 	kl641     = "KL641"
+	klm       = "KLM"
+	lhr       = "LHR"
 )
 
 // fakeAirports knows two airports.
@@ -41,7 +43,7 @@ func TestCreateManualAddsAPrivateFlight(t *testing.T) {
 	svc.WithAirports(fakeAirports{})
 
 	ctx := context.Background()
-	in := &ManualFlight{Number: "kl 641", Date: mayFourth, DepartureIATA: "ams ", ArrivalIATA: jfk, AirlineName: "KLM"}
+	in := &ManualFlight{Number: "kl 641", Date: mayFourth, DepartureIATA: "ams ", ArrivalIATA: jfk, AirlineName: klm}
 
 	created, err := svc.CreateManual(ctx, testUser, in)
 	if err != nil {

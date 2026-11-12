@@ -110,6 +110,13 @@ export interface FlightStats {
   airlines: number
 }
 
+export interface FlightBreakdown {
+  years: { year: number; flights: number; distance: number }[] | null
+  routes: { from: string; to: string; flights: number }[] | null
+  airlines: { name: string; flights: number }[] | null
+  countries: number
+}
+
 export interface ImportPreview {
   total: number
   enrichable: number

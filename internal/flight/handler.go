@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -203,6 +204,18 @@ func parseIntParam(r *http.Request, key string) (int, bool) {
 	return v, true
 }
 
+// maxSearchText bounds the free-text filter of the flight list.
+const maxSearchText = 50
+
+func searchText(r *http.Request) string {
+	text := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(text) > maxSearchText {
+		text = text[:maxSearchText]
+	}
+
+	return text
+}
+
 func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria, error) {
 	criteria := domain.FlightSearchCriteria{
 		UserID: userID,
@@ -220,6 +233,8 @@ func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria,
 	if v, ok := parseIntParam(r, "year"); ok {
 		criteria.Year = v
 	}
+
+	criteria.Query = searchText(r)
 
 	if s := r.URL.Query().Get("status"); s != "" {
 		if !domain.ValidFlightStatus(domain.FlightStatus(s)) {
@@ -298,6 +313,18 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.RespondJSON(w, http.StatusOK, stats)
+}
+
+// GetBreakdown returns per-year totals and the most flown routes and airlines.
+func (h *Handler) GetBreakdown(w http.ResponseWriter, r *http.Request) {
+	breakdown, err := h.flightService.GetBreakdown(r.Context(), api.GetUser(r).UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, breakdown)
 }
 
 // GetQuota returns the flight data provider's API quota as last reported.

@@ -34,6 +34,16 @@ These update in real time as you add or delete flights — there's no "refresh s
 !!! note "Only flown flights count"
     A flight that is still upcoming, or was **Cancelled** or **Diverted**, stays in your log (so your history is complete) but doesn't add to the map or to any of the tiles. Upcoming flights are picked up automatically once they land. AeroDataBox can't confirm a landing at every airport, so a flight that is still marked **Scheduled** a day after its date is counted as flown too.
 
+## A closer look
+
+Below the tiles, three lists break the same flights down further:
+
+- **By year** — how many flights you took each year, and how far.
+- **Top routes** — the five routes you fly most. Both directions count as one route, so a round trip is two flights on the same route.
+- **Top airlines** — the five airlines you fly most.
+
+The heading also shows how many **countries** you've flown to or from.
+
 ## What's not on this page
 
 The dashboard is deliberately read-only — there's nothing to click that takes you off it except the sidebar. If you want to add flights, head to [Search & Add](search-and-add.md). To dig into your log, see [My Flights](my-flights.md).

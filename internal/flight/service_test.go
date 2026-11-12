@@ -101,8 +101,8 @@ func newTestService(t *testing.T, p Provider) (*Service, *gorm.DB) {
 func testFlight(number, date string, status domain.FlightStatus) *domain.Flight {
 	f := &domain.Flight{Number: number, FlightDate: date, Status: status, Provider: "fake"}
 	f.Departure.Airport = domain.Airport{IATA: "AMS", Name: "Amsterdam Schiphol", Location: domain.Location{Lat: 52.31, Lon: 4.76}}
-	f.Arrival.Airport = domain.Airport{IATA: "LHR", Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}}
-	f.Airline = domain.FlightAirline{Name: "KLM", IATA: "KL"}
+	f.Arrival.Airport = domain.Airport{IATA: lhr, Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}}
+	f.Airline = domain.FlightAirline{Name: klm, IATA: "KL"}
 
 	return f
 }
@@ -433,7 +433,7 @@ func TestGetRoutesGroupsLandedFlights(t *testing.T) {
 
 	want := domain.Route{
 		Departure: domain.RouteAirport{IATA: "AMS", Name: "Amsterdam Schiphol", Location: domain.Location{Lat: 52.31, Lon: 4.76}},
-		Arrival:   domain.RouteAirport{IATA: "LHR", Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}},
+		Arrival:   domain.RouteAirport{IATA: lhr, Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}},
 		Flights:   2,
 	}
 	if *routes[0] != want {

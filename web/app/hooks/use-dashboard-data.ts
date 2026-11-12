@@ -3,22 +3,25 @@ import { toast } from "sonner"
 
 import { ApiError } from "~/lib/api"
 
-import type { FlightRoute, FlightStats } from "~/types"
+import type { FlightBreakdown, FlightRoute, FlightStats } from "~/types"
 
 import { flightService } from "~/services"
 
 export function useDashboardData() {
   const [routes, setRoutes] = useState<FlightRoute[]>([])
   const [stats, setStats] = useState<FlightStats | null>(null)
+  const [breakdown, setBreakdown] = useState<FlightBreakdown | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const loadData = useCallback(async () => {
     try {
-      const [routeData, statsData] = await Promise.all([
+      const [routeData, statsData, breakdownData] = await Promise.all([
         flightService.routes(),
         flightService.stats(),
+        flightService.breakdown(),
       ])
       setRoutes(routeData)
+      setBreakdown(breakdownData)
       setStats(statsData)
     } catch (err) {
       const message =
@@ -33,5 +36,5 @@ export function useDashboardData() {
     loadData()
   }, [loadData])
 
-  return { routes, stats, isLoading }
+  return { routes, stats, breakdown, isLoading }
 }

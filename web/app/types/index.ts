@@ -1,6 +1,7 @@
 export type {
   AuthResponse,
   Flight,
+  FlightBreakdown,
   FlightListResponse,
   FlightRoute,
   FlightStats,

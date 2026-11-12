@@ -143,6 +143,8 @@ type UserFlight struct {
 // FlightSearchCriteria for searching flights.
 type FlightSearchCriteria struct {
 	UserID string
+	// Query is free text matched against flight number, airline and airports.
+	Query  string
 	Year   int
 	Status FlightStatus
 	Limit  int
@@ -169,6 +171,34 @@ type FlightMiss struct {
 // TableName overrides the GORM table name.
 func (*FlightMiss) TableName() string {
 	return "flight_misses"
+}
+
+// YearStat summarises the flights flown in one year.
+type YearStat struct {
+	Year     int     `json:"year"`
+	Flights  int     `json:"flights"`
+	Distance float64 `json:"distance"`
+}
+
+// RouteStat counts flights between two airports, in either direction.
+type RouteStat struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Flights int    `json:"flights"`
+}
+
+// AirlineStat counts flights with one airline.
+type AirlineStat struct {
+	Name    string `json:"name"`
+	Flights int    `json:"flights"`
+}
+
+// FlightBreakdown is a closer look at a user's flown flights.
+type FlightBreakdown struct {
+	Years     []YearStat    `json:"years"`
+	Routes    []RouteStat   `json:"routes"`
+	Airlines  []AirlineStat `json:"airlines"`
+	Countries int           `json:"countries"`
 }
 
 // ProviderQuota is what the flight data provider last reported about the API

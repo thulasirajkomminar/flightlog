@@ -7,6 +7,7 @@ import {
   Path,
 } from "@phosphor-icons/react"
 
+import { FlightBreakdown } from "~/components/flight-breakdown"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -42,7 +43,7 @@ function formatDuration(hours: number): string {
 }
 
 export default function DashboardPage() {
-  const { routes, stats, isLoading } = useDashboardData()
+  const { routes, stats, breakdown, isLoading } = useDashboardData()
 
   const metrics = stats
     ? [
@@ -140,6 +141,10 @@ export default function DashboardPage() {
                 ))}
           </div>
         </div>
+
+        {breakdown && stats && stats.flights > 0 && (
+          <FlightBreakdown breakdown={breakdown} />
+        )}
       </div>
     </>
   )

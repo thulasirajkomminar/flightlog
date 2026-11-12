@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from "~/constants"
 
 import type {
   Flight,
+  FlightBreakdown,
   FlightListResponse,
   FlightRoute,
   FlightStats,
@@ -15,7 +16,8 @@ export const flightService = {
     limit = 20,
     offset = 0,
     year?: number,
-    status?: string
+    status?: string,
+    query?: string
   ): Promise<FlightListResponse> {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -27,6 +29,9 @@ export const flightService = {
     if (status) {
       params.set("status", status)
     }
+    if (query) {
+      params.set("q", query)
+    }
     return api.get<FlightListResponse>(
       `${API_ENDPOINTS.FLIGHTS.LIST}?${params}`
     )
@@ -34,6 +39,10 @@ export const flightService = {
 
   async stats(): Promise<FlightStats> {
     return api.get<FlightStats>(API_ENDPOINTS.FLIGHTS.STATS)
+  },
+
+  async breakdown(): Promise<FlightBreakdown> {
+    return api.get<FlightBreakdown>(API_ENDPOINTS.FLIGHTS.BREAKDOWN)
   },
 
   async quota(): Promise<ProviderQuota> {

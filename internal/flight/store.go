@@ -3,6 +3,7 @@ package flight
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -370,6 +371,54 @@ func (s *UserFlightStore) GetStats(ctx context.Context, userID string) (*domain.
 	return &stats, nil
 }
 
+// topCount is how many routes and airlines the breakdown lists.
+const topCount = 5
+
+// GetBreakdown returns per-year totals, the most flown routes and airlines,
+// and the number of countries visited, over the flights a user has flown.
+func (s *UserFlightStore) GetBreakdown(ctx context.Context, userID string) (*domain.FlightBreakdown, error) {
+	args := flownArgs(userID, time.Now().UTC())
+	db := s.db.WithContext(ctx)
+	out := &domain.FlightBreakdown{}
+
+	const flown = `FROM flights f JOIN user_flights uf ON uf.flight_id = f.id WHERE uf.user_id = @user AND ` + flownSQL
+
+	err := db.Raw(`
+		SELECT CAST(strftime('%Y', f.flight_date) AS INTEGER) AS year, COUNT(*) AS flights, COALESCE(SUM(f.gcd_km), 0) AS distance
+		`+flown+` GROUP BY year ORDER BY year DESC`, args...).Scan(&out.Years).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// A route counts in both directions: AMS-JFK and JFK-AMS are one route.
+	err = db.Raw(`
+		SELECT MIN(f.dep_airport_iata, f.arr_airport_iata) AS "from", MAX(f.dep_airport_iata, f.arr_airport_iata) AS "to", COUNT(*) AS flights
+		`+flown+` GROUP BY 1, 2 ORDER BY flights DESC, 1, 2 LIMIT @top`, append(args, sql.Named("top", topCount))...).Scan(&out.Routes).Error
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Raw(`
+		SELECT COALESCE(NULLIF(f.airline_name, ''), f.airline_iata) AS name, COUNT(*) AS flights
+		`+flown+` AND COALESCE(NULLIF(f.airline_name, ''), f.airline_iata) != ''
+		GROUP BY name ORDER BY flights DESC, name LIMIT @top`, append(args, sql.Named("top", topCount))...).Scan(&out.Airlines).Error
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT f.dep_airport_country_code AS country `+flown+` AND f.dep_airport_country_code != ''
+			UNION
+			SELECT f.arr_airport_country_code AS country `+flown+` AND f.arr_airport_country_code != ''
+		)`, args...).Scan(&out.Countries).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
 // routeRow is the flat result of the routes query.
 type routeRow struct {
 	DepIATA string
@@ -433,7 +482,39 @@ func applyFilters(query *gorm.DB, criteria *domain.FlightSearchCriteria) *gorm.D
 		query = query.Where("flights.status = ?", criteria.Status)
 	}
 
+	if criteria.Query != "" {
+		query = applyTextSearch(query, criteria.Query)
+	}
+
 	return query
+}
+
+// likeEscaper makes user text literal inside a LIKE pattern.
+//
+//nolint:gochecknoglobals // immutable replacer
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// contains builds a LIKE pattern that matches text anywhere in a value.
+func contains(text string) string {
+	const wildcard = "%"
+
+	return wildcard + likeEscaper.Replace(text) + wildcard
+}
+
+// applyTextSearch matches free text against the flight number, the airline
+// and both airports (code, name and city). LIKE is case-insensitive in SQLite.
+func applyTextSearch(query *gorm.DB, text string) *gorm.DB {
+	pattern := contains(text)
+	// Flight numbers are stored without spaces: "kl 641" must find "KL641".
+	number := contains(strings.ReplaceAll(text, " ", ""))
+
+	return query.Where(`flights.flight_number LIKE @number ESCAPE '\'
+		OR flights.airline_name LIKE @text ESCAPE '\'
+		OR flights.dep_airport_iata LIKE @text ESCAPE '\' OR flights.arr_airport_iata LIKE @text ESCAPE '\'
+		OR flights.dep_airport_name LIKE @text ESCAPE '\' OR flights.arr_airport_name LIKE @text ESCAPE '\'
+		OR flights.dep_airport_municipality_name LIKE @text ESCAPE '\'
+		OR flights.arr_airport_municipality_name LIKE @text ESCAPE '\'`,
+		sql.Named("number", number), sql.Named("text", pattern))
 }
 
 func applyPagination(query *gorm.DB, criteria *domain.FlightSearchCriteria) *gorm.DB {
