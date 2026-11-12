@@ -3,6 +3,7 @@ package flight
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -24,6 +25,38 @@ func (s *CacheStore) Create(ctx context.Context, flight *domain.Flight) error {
 	flight.GenerateID()
 
 	return s.db.WithContext(ctx).Create(flight).Error
+}
+
+// Update overwrites a cached flight with fresh provider data.
+func (s *CacheStore) Update(ctx context.Context, flight *domain.Flight) error {
+	return s.db.WithContext(ctx).Save(flight).Error
+}
+
+// Touch marks a cached flight as checked without changing its data.
+func (s *CacheStore) Touch(ctx context.Context, flightID string) error {
+	return s.db.WithContext(ctx).Model(&domain.Flight{}).
+		Where("id = ?", flightID).
+		Update("updated_at", time.Now()).Error
+}
+
+// FindRefreshDue returns flights in a user's collection whose status can still
+// change, dated between fromDate and toDate, and not checked since checkedBefore.
+func (s *CacheStore) FindRefreshDue(ctx context.Context, fromDate, toDate string, checkedBefore time.Time, limit int) ([]*domain.Flight, error) {
+	var flights []*domain.Flight
+
+	err := s.db.WithContext(ctx).
+		Where("status IN ?", []domain.FlightStatus{domain.FlightStatusScheduled, domain.FlightStatusActive}).
+		Where("flight_date BETWEEN ? AND ?", fromDate, toDate).
+		Where("updated_at < ?", checkedBefore).
+		Where("id IN (?)", s.db.Table("user_flights").Select("flight_id")).
+		Order("updated_at").
+		Limit(limit).
+		Find(&flights).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return flights, nil
 }
 
 // FindByRoute retrieves a cached flight by number, date, and route.

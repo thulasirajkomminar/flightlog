@@ -31,6 +31,13 @@ func ValidFlightStatus(s FlightStatus) bool {
 	}
 }
 
+// IsFinal reports whether the status can no longer change, so the flight
+// never needs to be refreshed from the provider again.
+func (s FlightStatus) IsFinal() bool {
+	return s == FlightStatusLanded || s == FlightStatusCancelled ||
+		s == FlightStatusIncident || s == FlightStatusDiverted
+}
+
 // Location holds a WGS84 latitude/longitude pair.
 type Location struct {
 	Lat float64 `json:"lat" gorm:"column:lat"`

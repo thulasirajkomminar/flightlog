@@ -18,11 +18,20 @@ var ErrNoFlightsFound = errors.New("no flights found")
 const (
 	logKeyFlightNumber = "flight_number"
 	logKeyDate         = "date"
+
+	// searchRefreshAge is how old a cached non-final flight may be before a
+	// search re-fetches it from the provider.
+	searchRefreshAge = 15 * time.Minute
+	// providerHistoryDays is how far back the provider serves flight data.
+	providerHistoryDays = 365
 )
 
 // CacheRepository manages cached flight data from providers.
 type CacheRepository interface {
 	Create(ctx context.Context, flight *domain.Flight) error
+	Update(ctx context.Context, flight *domain.Flight) error
+	Touch(ctx context.Context, flightID string) error
+	FindRefreshDue(ctx context.Context, fromDate, toDate string, checkedBefore time.Time, limit int) ([]*domain.Flight, error)
 	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
 	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
 }
@@ -71,22 +80,18 @@ func NewService(cache CacheRepository, userRepo UserFlightRepository, provider P
 }
 
 // SearchFlights checks the flight cache first for the flight_number+date combo.
-// If not found, fetches from the provider and caches them.
+// If not found, or if a cached flight may have changed status since it was
+// cached, fetches from the provider and updates the cache.
 func (s *Service) SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+	now := time.Now().UTC()
+
 	if date == "" {
-		date = time.Now().UTC().Format("2006-01-02")
+		date = now.Format(time.DateOnly)
 	}
 
 	flights, err := s.cache.FindByNumberAndDate(ctx, flightNumber, date)
 	if err == nil && len(flights) > 0 {
-		s.log.Debug("cache hit",
-			zap.String(logKeyFlightNumber, flightNumber),
-			zap.String(logKeyDate, date),
-			zap.Int("count", len(flights)),
-		)
-		formatFlightNumbers(flights)
-
-		return flights, nil
+		return s.searchCached(ctx, flights, flightNumber, date, now), nil
 	}
 
 	s.log.Debug("cache miss, fetching from provider",
@@ -188,6 +193,41 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*domain.FlightSt
 	return stats, nil
 }
 
+// searchCached returns cached flights, refreshing them from the provider first
+// when their status may be out of date. A failed refresh falls back to the cache.
+func (s *Service) searchCached(ctx context.Context, cached []*domain.Flight, flightNumber, date string, now time.Time) []*domain.Flight {
+	if anyStale(cached, now) {
+		fresh, err := s.fetchFromProvider(ctx, flightNumber, date)
+		if err == nil {
+			return fresh
+		}
+	}
+
+	s.log.Debug("cache hit",
+		zap.String(logKeyFlightNumber, flightNumber),
+		zap.String(logKeyDate, date),
+		zap.Int("count", len(cached)),
+	)
+	formatFlightNumbers(cached)
+
+	return cached
+}
+
+// anyStale reports whether a cached flight is worth re-fetching: its status
+// can still change, it was last checked a while ago, and the provider still
+// serves its date.
+func anyStale(flights []*domain.Flight, now time.Time) bool {
+	oldestDate := now.AddDate(0, 0, -providerHistoryDays).Format(time.DateOnly)
+
+	for _, f := range flights {
+		if !f.Status.IsFinal() && now.Sub(f.UpdatedAt) > searchRefreshAge && f.FlightDate >= oldestDate {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
 	criteria := map[string]string{
 		"flight_iata": flightNumber,
@@ -219,20 +259,10 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	for _, flight := range providerFlights {
 		flight.Number = domain.NormalizeFlightNumber(flight.Number)
 
-		cached, err := s.cache.FindByRoute(ctx, flight.Number, flight.FlightDate,
-			flight.Departure.Airport.IATA, flight.Arrival.Airport.IATA)
-		if err == nil {
-			result = append(result, cached)
-
-			continue
-		}
-
-		err = s.cache.Create(ctx, flight)
+		err := s.storeProviderFlight(ctx, flight)
 		if err != nil {
-			return nil, fmt.Errorf("cache flight %s: %w", flight.Number, err)
+			return nil, err
 		}
-
-		s.backfiller.BackfillFromFlight(ctx, flight)
 
 		result = append(result, flight)
 	}
@@ -240,6 +270,33 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	formatFlightNumbers(result)
 
 	return result, nil
+}
+
+// storeProviderFlight caches a provider flight, overwriting the existing cache
+// entry for the same flight and route so its ID (and user links) are kept.
+func (s *Service) storeProviderFlight(ctx context.Context, flight *domain.Flight) error {
+	cached, err := s.cache.FindByRoute(ctx, flight.Number, flight.FlightDate,
+		flight.Departure.Airport.IATA, flight.Arrival.Airport.IATA)
+	if err == nil {
+		flight.ID = cached.ID
+		flight.CreatedAt = cached.CreatedAt
+
+		err = s.cache.Update(ctx, flight)
+		if err != nil {
+			return fmt.Errorf("update cached flight %s: %w", flight.Number, err)
+		}
+
+		return nil
+	}
+
+	err = s.cache.Create(ctx, flight)
+	if err != nil {
+		return fmt.Errorf("cache flight %s: %w", flight.Number, err)
+	}
+
+	s.backfiller.BackfillFromFlight(ctx, flight)
+
+	return nil
 }
 
 func formatFlightNumbers(flights []*domain.Flight) {

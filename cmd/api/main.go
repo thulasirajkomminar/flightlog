@@ -63,7 +63,11 @@ func main() {
 		return
 	}
 
-	srv, err := buildServer(cfg, db)
+	// Cancelled on shutdown to stop background work such as the status refresher.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, err := buildServer(ctx, cfg, db)
 	if err != nil {
 		appLogger.Error("Failed to build server", err)
 
@@ -155,7 +159,7 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 	return db, nil
 }
 
-func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
+func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 	flightCacheStore := flight.NewCacheStore(db)
 	userFlightStore := flight.NewUserFlightStore(db)
 
@@ -169,6 +173,9 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 
 	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup)
 	flightHandler := flight.NewHandler(flightService)
+
+	go flightService.RunRefresher(ctx)
+
 	providers := map[string]provider.FlightProvider{
 		aeroProvider.GetProviderName(): aeroProvider,
 	}

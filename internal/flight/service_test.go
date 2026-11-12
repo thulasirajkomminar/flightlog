@@ -1,0 +1,265 @@
+package flight
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
+
+	"github.com/thulasirajkomminar/flightlog/internal/domain"
+	"github.com/thulasirajkomminar/flightlog/internal/logger"
+)
+
+var errProviderDown = errors.New("provider down")
+
+func TestMain(m *testing.M) {
+	// Initialise the lazy global logger once, before parallel tests use it.
+	logger.GetLogger()
+	m.Run()
+}
+
+// fakeProvider returns canned flights and counts calls.
+type fakeProvider struct {
+	flights []*domain.Flight
+	err     error
+	calls   int
+}
+
+func (p *fakeProvider) SearchFlights(_ context.Context, _ map[string]string) ([]*domain.Flight, error) {
+	p.calls++
+
+	if p.err != nil {
+		return nil, p.err
+	}
+
+	out := make([]*domain.Flight, 0, len(p.flights))
+
+	for _, f := range p.flights {
+		c := *f
+		out = append(out, &c)
+	}
+
+	return out, nil
+}
+
+func (p *fakeProvider) GetProviderName() string { return "fake" }
+
+type noopBackfiller struct{}
+
+func (noopBackfiller) BackfillFromFlight(context.Context, *domain.Flight) {}
+
+func newTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{
+		Logger: gormlogger.Discard,
+	})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{})
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	return db
+}
+
+func newTestService(t *testing.T, p Provider) (*Service, *gorm.DB) {
+	t.Helper()
+
+	db := newTestDB(t)
+
+	return NewService(NewCacheStore(db), NewUserFlightStore(db), p, noopBackfiller{}), db
+}
+
+func testFlight(number, date string, status domain.FlightStatus) *domain.Flight {
+	f := &domain.Flight{Number: number, FlightDate: date, Status: status, Provider: "fake"}
+	f.Departure.Airport = domain.Airport{IATA: "AMS", Name: "Amsterdam Schiphol", Location: domain.Location{Lat: 52.31, Lon: 4.76}}
+	f.Arrival.Airport = domain.Airport{IATA: "LHR", Name: "London Heathrow", Location: domain.Location{Lat: 51.47, Lon: -0.45}}
+	f.Airline = domain.FlightAirline{Name: "KLM", IATA: "KL"}
+
+	return f
+}
+
+// insertFlight stores a flight with an explicit last-checked time.
+func insertFlight(t *testing.T, db *gorm.DB, f *domain.Flight, updatedAt time.Time) {
+	t.Helper()
+
+	f.GenerateID()
+
+	err := db.Create(f).Error
+	if err != nil {
+		t.Fatalf("insert flight: %v", err)
+	}
+
+	err = db.Model(&domain.Flight{}).Where("id = ?", f.ID).UpdateColumn("updated_at", updatedAt).Error
+	if err != nil {
+		t.Fatalf("set updated_at: %v", err)
+	}
+}
+
+func TestSearchFlightsRefreshesStaleNonFinalFlight(t *testing.T) {
+	t.Parallel()
+
+	today := time.Now().UTC().Format(time.DateOnly)
+	provider := &fakeProvider{flights: []*domain.Flight{testFlight("KL1001", today, domain.FlightStatusLanded)}}
+	svc, db := newTestService(t, provider)
+
+	cached := testFlight("KL1001", today, domain.FlightStatusScheduled)
+	insertFlight(t, db, cached, time.Now().Add(-time.Hour))
+
+	got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+	if err != nil {
+		t.Fatalf("SearchFlights: %v", err)
+	}
+
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+
+	if len(got) != 1 || got[0].Status != domain.FlightStatusLanded {
+		t.Fatalf("got %+v, want one landed flight", got)
+	}
+
+	if got[0].ID != cached.ID {
+		t.Errorf("flight ID changed from %s to %s; user links would break", cached.ID, got[0].ID)
+	}
+
+	var count int64
+
+	db.Model(&domain.Flight{}).Count(&count)
+
+	if count != 1 {
+		t.Errorf("flights in cache = %d, want 1", count)
+	}
+}
+
+func TestSearchFlightsUsesCacheWhenFresh(t *testing.T) {
+	t.Parallel()
+
+	today := time.Now().UTC().Format(time.DateOnly)
+
+	tests := []struct {
+		name      string
+		status    domain.FlightStatus
+		updatedAt time.Time
+	}{
+		{"final status is never refreshed", domain.FlightStatusLanded, time.Now().Add(-48 * time.Hour)},
+		{"recently checked flight is not refreshed", domain.FlightStatusScheduled, time.Now().Add(-time.Minute)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			provider := &fakeProvider{}
+			svc, db := newTestService(t, provider)
+			insertFlight(t, db, testFlight("KL1001", today, tt.status), tt.updatedAt)
+
+			got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+			if err != nil {
+				t.Fatalf("SearchFlights: %v", err)
+			}
+
+			if provider.calls != 0 {
+				t.Errorf("provider calls = %d, want 0", provider.calls)
+			}
+
+			if len(got) != 1 || got[0].Status != tt.status {
+				t.Errorf("got %+v, want cached flight", got)
+			}
+		})
+	}
+}
+
+func TestSearchFlightsFallsBackToCacheWhenRefreshFails(t *testing.T) {
+	t.Parallel()
+
+	today := time.Now().UTC().Format(time.DateOnly)
+	provider := &fakeProvider{err: errProviderDown}
+	svc, db := newTestService(t, provider)
+	insertFlight(t, db, testFlight("KL1001", today, domain.FlightStatusScheduled), time.Now().Add(-time.Hour))
+
+	got, err := svc.SearchFlights(context.Background(), "KL1001", today)
+	if err != nil {
+		t.Fatalf("SearchFlights: %v", err)
+	}
+
+	if len(got) != 1 || got[0].Status != domain.FlightStatusScheduled {
+		t.Errorf("got %+v, want cached scheduled flight", got)
+	}
+}
+
+func TestRefreshDue(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	today := now.Format(time.DateOnly)
+	provider := &fakeProvider{flights: []*domain.Flight{testFlight("KL1001", today, domain.FlightStatusLanded)}}
+	svc, db := newTestService(t, provider)
+
+	linked := testFlight("KL1001", today, domain.FlightStatusScheduled)
+	insertFlight(t, db, linked, now.Add(-12*time.Hour))
+
+	// Not in anyone's collection: must not cost a provider call.
+	unlinked := testFlight("KL2002", today, domain.FlightStatusScheduled)
+	insertFlight(t, db, unlinked, now.Add(-12*time.Hour))
+
+	err := svc.AddFlight(context.Background(), "user-1", linked.ID)
+	if err != nil {
+		t.Fatalf("AddFlight: %v", err)
+	}
+
+	if updated := svc.RefreshDue(context.Background(), now); updated != 1 {
+		t.Fatalf("RefreshDue updated = %d, want 1", updated)
+	}
+
+	if provider.calls != 1 {
+		t.Errorf("provider calls = %d, want 1", provider.calls)
+	}
+
+	got, err := svc.GetFlight(context.Background(), "user-1", linked.ID)
+	if err != nil {
+		t.Fatalf("GetFlight: %v", err)
+	}
+
+	if got.Status != domain.FlightStatusLanded {
+		t.Errorf("status = %s, want landed", got.Status)
+	}
+
+	// A second run finds nothing due.
+	if updated := svc.RefreshDue(context.Background(), now); updated != 0 {
+		t.Errorf("second RefreshDue updated = %d, want 0", updated)
+	}
+}
+
+func TestRefreshDueMarksCheckedWhenProviderHasNoAnswer(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	today := now.Format(time.DateOnly)
+	provider := &fakeProvider{err: errProviderDown}
+	svc, db := newTestService(t, provider)
+
+	f := testFlight("KL1001", today, domain.FlightStatusScheduled)
+	insertFlight(t, db, f, now.Add(-12*time.Hour))
+
+	err := svc.AddFlight(context.Background(), "user-1", f.ID)
+	if err != nil {
+		t.Fatalf("AddFlight: %v", err)
+	}
+
+	svc.RefreshDue(context.Background(), now)
+	svc.RefreshDue(context.Background(), now)
+
+	if provider.calls != 1 {
+		t.Errorf("provider calls = %d, want 1 (failed check must not be retried immediately)", provider.calls)
+	}
+}
