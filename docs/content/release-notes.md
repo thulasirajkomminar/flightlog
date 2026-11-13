@@ -2,6 +2,14 @@
 
 What changed in each release, and anything you need to know before upgrading. Releases that only update dependencies are not listed here; the full list is on the [GitHub releases page](https://github.com/thulasirajkomminar/flightlog/releases).
 
+## v0.13.1
+
+### Fixed
+
+- **The container failed to start with `chown: /app/data: Operation not permitted`** when the data directory lives on storage that doesn't allow changing ownership (NFS or SMB shares, rootless Docker or Podman, or a container with dropped capabilities). It now logs a short notice and keeps running as root there, as versions before v0.13.0 did. See [where data lives](getting-started/configuration.md#where-data-lives).
+
+If you are on v0.13.0 and hit this, upgrade to v0.13.1. Until then, adding `entrypoint: ["./main"]` to the service in your compose file starts the app the old way.
+
 ## v0.13.0
 
 A large release: far fewer AeroDataBox API calls, a globe map, background imports, flights added by hand, and account settings.
@@ -17,7 +25,7 @@ No manual migration steps are needed. To upgrade, follow the usual [upgrade step
 
 - **Unused data is removed from the database:** the route distance cache, the stored raw AeroDataBox responses, and four redundant distance columns. Nothing you can see in the app is lost.
 - **Imported flights become private.** A flight you imported from a CSV now belongs to your account only. A flight that several accounts already share stays shared.
-- **The container runs as an unprivileged user.** Existing volumes are made writable for it automatically.
+- **The container runs as an unprivileged user.** Existing volumes are made writable for it automatically. Where the storage doesn't allow that (NFS or SMB shares, rootless Docker, dropped capabilities), it keeps running as root and says so in the log.
 
 ### What behaves differently
 
