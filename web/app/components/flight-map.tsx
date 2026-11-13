@@ -38,16 +38,32 @@ const AIRPORTS_LAYER = "airports"
 const ROUTE_COLOR = "#3b82f6"
 
 // Zoom at which the whole globe fits a map of GLOBE_REFERENCE_SIZE pixels
-// on its shorter side. Halving the size takes one zoom level off.
-const WHOLE_GLOBE_ZOOM = 0.9
+// on its shorter side when centred on the equator. Halving the size takes
+// one zoom level off.
+const WHOLE_GLOBE_ZOOM = 1.9
 const GLOBE_REFERENCE_SIZE = 500
+// Where the globe faces before the flights have loaded.
+const INITIAL_LATITUDE = 30
+// Keeps the latitude correction finite when the centre is near a pole.
+const MIN_LATITUDE_SCALE = 0.05
 
 // Zoom at which the whole globe fits the map as it is currently sized, so it
-// is not cut off on a narrow phone screen.
-function wholeGlobeZoom(map: MapLibreMap): number {
-  const { clientWidth, clientHeight } = map.getContainer()
+// is not cut off on a narrow phone screen. MapLibre draws the globe larger
+// the further the centre is from the equator (by 1 / cos(latitude)), so the
+// zoom is lowered by the same factor to keep the globe the same size
+// wherever the flights are.
+function wholeGlobeZoom(container: HTMLElement, latitude: number): number {
+  const { clientWidth, clientHeight } = container
   const shorter = Math.min(clientWidth, clientHeight) || GLOBE_REFERENCE_SIZE
-  return WHOLE_GLOBE_ZOOM + Math.log2(shorter / GLOBE_REFERENCE_SIZE)
+  const latitudeScale = Math.max(
+    MIN_LATITUDE_SCALE,
+    Math.cos((latitude * Math.PI) / 180)
+  )
+  return (
+    WHOLE_GLOBE_ZOOM +
+    Math.log2(shorter / GLOBE_REFERENCE_SIZE) +
+    Math.log2(latitudeScale)
+  )
 }
 
 type Projection = "globe" | "mercator"
@@ -206,10 +222,8 @@ function showAirports(
 
   const spansGlobe = bounds.getEast() - bounds.getWest() > 120
   if (projection === "globe" && spansGlobe) {
-    map.jumpTo({
-      center: sphericalCenter(airports.map((a) => a.location)),
-      zoom: wholeGlobeZoom(map),
-    })
+    const center = sphericalCenter(airports.map((a) => a.location))
+    map.jumpTo({ center, zoom: wholeGlobeZoom(map.getContainer(), center[1]) })
     return
   }
 
@@ -250,8 +264,8 @@ export default function FlightMap({ routes }: FlightMapProps) {
         },
         layers: [{ id: "basemap", type: "raster", source: "basemap" }],
       },
-      center: [0, 30],
-      zoom: WHOLE_GLOBE_ZOOM,
+      center: [0, INITIAL_LATITUDE],
+      zoom: wholeGlobeZoom(containerRef.current, INITIAL_LATITUDE),
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
