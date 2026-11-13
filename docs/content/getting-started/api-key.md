@@ -8,7 +8,7 @@ AeroDataBox publishes its API through [RapidAPI](https://rapidapi.com/aedbx-aedb
 
 1. **Create a RapidAPI account.** Head to [rapidapi.com](https://rapidapi.com) and sign up — Google or GitHub sign-in works fine.
 
-2. **Subscribe to AeroDataBox.** Go to the [AeroDataBox listing on RapidAPI](https://rapidapi.com/aedbx-aedbx/api/aerodatabox) and click **Subscribe to Test**. Pick the **BASIC** plan — it's free and gives you a healthy monthly quota that's more than enough for personal use.
+2. **Subscribe to AeroDataBox.** Go to the [AeroDataBox listing on RapidAPI](https://rapidapi.com/aedbx-aedbx/api/aerodatabox) and click **Subscribe to Test**. Pick the **BASIC** plan — it's free and, when last checked in November 2026, gives you 600 API units a month. A flight lookup costs 2 units, so that is about 300 lookups a month: more than enough for personal use.
 
 3. **Copy your `X-RapidAPI-Key`.** On the AeroDataBox page, look at the right-hand panel under **Header Parameters**. You'll see a key labelled `X-RapidAPI-Key` with a long string. That's your API key — copy it.
 
@@ -20,20 +20,35 @@ AeroDataBox publishes its API through [RapidAPI](https://rapidapi.com/aedbx-aedb
 
 That's the whole setup. Restart the container after editing `.env` and you're done.
 
-## Which endpoint does Flightlog hit?
+## Which endpoints does Flightlog hit?
 
-Just one: [`GET /flights/Number/{number}/{date}`](https://doc.aerodatabox.com/rapidapi.html#/operations/GetFlight_FlightOnSpecificDate) — _Flight on a specific date_. Every other piece of info on the dashboard (distances, airline names, airport metadata) is derived locally from the data this endpoint returns plus a small built-in airport database.
+Only one of them costs quota in normal use:
+
+| Endpoint                                                                                                                      | Used for                                                                     | Cost                             |
+| ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------- |
+| [`GET /flights/Number/{number}/{date}`](https://doc.aerodatabox.com/rapidapi.html#/operations/GetFlight_FlightOnSpecificDate) | Looking a flight up, and checking whether it has landed.                     | Counts against your quota.       |
+| `GET /health/services/feeds/FlightLiveUpdates/airports`                                                                       | Learning which airports AeroDataBox tracks live. Fetched about once a day.   | Free-tier endpoint.              |
+| `GET /airports/Iata/{code}`                                                                                                   | An airport that is missing from the built-in database, such as a closed one. | One call per such airport, ever. |
+
+Everything else on the dashboard (distances, airline names, airport details) is worked out locally, from the flight data plus a built-in database of about 9,000 airports.
 
 ## How many calls will I make?
 
-Flightlog **caches every lookup** in its local SQLite database. The same flight number + date combination is fetched from AeroDataBox once and then served from the cache forever after. In practice:
+Flightlog is built to be gentle on a free plan. It **caches every lookup** in its local SQLite database and only goes back to AeroDataBox when the answer could have changed.
 
-- Logging a new flight = **1 API call**
-- Re-opening that flight, re-running the same search, exporting, browsing = **0 API calls**
-- Re-importing your own Flightlog CSV export = **0 API calls** (everything is in the file)
-- Importing a Flighty CSV with enrichment turned on = up to 1 call per flight under one year old
+AeroDataBox counts quota in **API units**, and one flight lookup — one "API call" in the list below — costs **2 units**. You can see how many units are left under **Settings** in the app.
+
+- Logging a new flight = **1 API call**.
+- Re-opening that flight, re-running the same search, exporting, browsing = **0 API calls**.
+- Searching for a flight that doesn't exist = **1 API call**, and the answer is remembered — for a week when the date is in the past, for six hours otherwise — so trying again is free.
+- Searching again for a flight that hasn't landed yet = **0 API calls**, unless its date is within a few days of today. Then it is refreshed, at most once every 30 minutes, so you see current times and gates.
+- A flight in your log that was added before it flew = **1 API call** after its scheduled arrival, to pick up that it landed. If AeroDataBox doesn't confirm the landing, Flightlog tries twice more (after 6 and 24 hours) and then stops. Flights between airports AeroDataBox doesn't track live are never checked at all. Set `FLIGHT_STATUS_REFRESH=false` to switch these checks off entirely.
+- Re-importing your own Flightlog CSV export = **0 API calls** (everything is in the file).
+- Importing a Flighty CSV = **0 API calls** with enrichment off; with it on, up to 1 call per flight under one year old.
 
 If you're worried about quota, leave enrichment off when you import — you'll still get the basics (date, airline, route) from the CSV itself.
+
+Flightlog also watches the quota AeroDataBox reports. When less than a fifth of it is left (120 units on the free plan), the automatic landing checks pause so the rest is kept for your own searches. If the quota runs out completely, Flightlog stops calling for a while and tells you so, instead of failing slowly.
 
 !!! info "Keys are local"
     Your API key only ever leaves the Flightlog container in outbound requests to AeroDataBox. It's never sent to your browser, never logged in plain text, never shared with anything else.

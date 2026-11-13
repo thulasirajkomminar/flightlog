@@ -8,39 +8,39 @@ import (
 
 // ImportEntry is a flight parsed from an import file.
 type ImportEntry struct {
-	FlightNumber string
-	Date         string
-	DepIATA      string
-	ArrIATA      string
-	Airline      string
-	Aircraft     string
-	Status       string
-	DepTime      *time.Time
-	ArrTime      *time.Time
+	FlightNumber string     `json:"flightNumber,omitempty"`
+	Date         string     `json:"date,omitempty"`
+	DepIATA      string     `json:"depIata,omitempty"`
+	ArrIATA      string     `json:"arrIata,omitempty"`
+	Airline      string     `json:"airline,omitempty"`
+	Aircraft     string     `json:"aircraft,omitempty"`
+	Status       string     `json:"status,omitempty"`
+	DepTime      *time.Time `json:"depTime,omitempty"`
+	ArrTime      *time.Time `json:"arrTime,omitempty"`
 
 	// Optional fields populated by adapters with complete data (e.g. Flightlog export).
-	DepICAO      string
-	DepName      string
-	DepCity      string
-	DepCountry   string
-	DepLat       float64
-	DepLon       float64
-	DepTimeLocal string
-	DepTerminal  string
-	DepGate      string
-	ArrICAO      string
-	ArrName      string
-	ArrCity      string
-	ArrCountry   string
-	ArrLat       float64
-	ArrLon       float64
-	ArrTimeLocal string
-	ArrTerminal  string
-	ArrGate      string
-	AircraftReg  string
-	AirlineName  string
-	AirlineICAO  string
-	DistanceKm   float64
+	DepICAO      string  `json:"depIcao,omitempty"`
+	DepName      string  `json:"depName,omitempty"`
+	DepCity      string  `json:"depCity,omitempty"`
+	DepCountry   string  `json:"depCountry,omitempty"`
+	DepLat       float64 `json:"depLat,omitempty"`
+	DepLon       float64 `json:"depLon,omitempty"`
+	DepTimeLocal string  `json:"depTimeLocal,omitempty"`
+	DepTerminal  string  `json:"depTerminal,omitempty"`
+	DepGate      string  `json:"depGate,omitempty"`
+	ArrICAO      string  `json:"arrIcao,omitempty"`
+	ArrName      string  `json:"arrName,omitempty"`
+	ArrCity      string  `json:"arrCity,omitempty"`
+	ArrCountry   string  `json:"arrCountry,omitempty"`
+	ArrLat       float64 `json:"arrLat,omitempty"`
+	ArrLon       float64 `json:"arrLon,omitempty"`
+	ArrTimeLocal string  `json:"arrTimeLocal,omitempty"`
+	ArrTerminal  string  `json:"arrTerminal,omitempty"`
+	ArrGate      string  `json:"arrGate,omitempty"`
+	AircraftReg  string  `json:"aircraftReg,omitempty"`
+	AirlineName  string  `json:"airlineName,omitempty"`
+	AirlineICAO  string  `json:"airlineIcao,omitempty"`
+	DistanceKm   float64 `json:"distanceKm,omitempty"`
 }
 
 // Adapter parses a file from a specific app into import entries.

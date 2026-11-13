@@ -1,58 +1,43 @@
+import { api } from "~/lib/api"
 import { API_ENDPOINTS } from "~/constants"
 
-import type { ImportPreview, ImportResult } from "~/types"
+import type { ImportJob, ImportPreview } from "~/types"
+
+function fileForm(file: File): FormData {
+  const form = new FormData()
+  form.append("file", file)
+  return form
+}
 
 export const importService = {
   async preview(source: string, file: File): Promise<ImportPreview> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    const response = await fetch(
-      `${API_ENDPOINTS.IMPORT.PREVIEW}?source=${encodeURIComponent(source)}`,
-      {
-        method: "POST",
-        body: formData,
-      }
+    const params = new URLSearchParams({ source })
+    return api.upload<ImportPreview>(
+      `${API_ENDPOINTS.IMPORT.PREVIEW}?${params}`,
+      fileForm(file)
     )
-
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to preview import")
-    }
-
-    return response.json()
   },
 
+  // Starts a background import and returns the new job.
   async importFlights(
     source: string,
     file: File,
     enrich: boolean
-  ): Promise<ImportResult> {
-    const formData = new FormData()
-    formData.append("file", file)
+  ): Promise<ImportJob> {
+    const params = new URLSearchParams({ source, enrich: String(enrich) })
+    return api.upload<ImportJob>(
+      `${API_ENDPOINTS.IMPORT.IMPORT}?${params}`,
+      fileForm(file)
+    )
+  },
 
-    const params = new URLSearchParams({
-      source,
-      enrich: String(enrich),
-    })
+  // Stops the running import; flights imported so far are kept.
+  async cancel(): Promise<void> {
+    return api.post(API_ENDPOINTS.IMPORT.CANCEL)
+  },
 
-    const response = await fetch(`${API_ENDPOINTS.IMPORT.IMPORT}?${params}`, {
-      method: "POST",
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({
-        error: `HTTP ${response.status}: ${response.statusText}`,
-      }))
-      throw new Error(data.error || "Failed to import flights")
-    }
-
-    const text = await response.text()
-    if (!text) {
-      throw new Error("Server returned an empty response")
-    }
-
-    return JSON.parse(text) as ImportResult
+  // Returns the running or most recently finished import, or null if none.
+  async status(): Promise<ImportJob | null> {
+    return api.get<ImportJob | null>(API_ENDPOINTS.IMPORT.STATUS)
   },
 }

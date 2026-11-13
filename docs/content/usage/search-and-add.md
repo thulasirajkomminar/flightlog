@@ -47,3 +47,15 @@ You can add the same flight number on different dates as separate entries — Fl
 
 !!! tip "Boarding pass on your phone? Add the flight in seconds"
     The fastest workflow I've found: pull up your boarding pass, glance at the flight number and date, switch to Flightlog on the same phone, type six characters, tap Add. Whole thing takes about ten seconds and you never have to remember to log it later.
+
+## Adding a flight by hand
+
+AeroDataBox only knows flights from roughly the last year, so an older trip — or one it simply doesn't have — won't turn up in the search. For those, click **Add it by hand** under the search form and fill in:
+
+- the **flight number** and **date**
+- the **from** and **to** airports, as three-letter codes (`AMS`, `JFK`)
+- optionally the **airline**, the **aircraft** and a **status**
+
+Flightlog looks both airports up in its built-in airport database, works out the distance between them, and saves the flight to your log. It costs no API calls. Departure and arrival times aren't recorded for these flights, so they count toward **Flights**, **Distance**, **Airports** and **Airlines** on the dashboard but not toward **Flight Time**.
+
+A flight you add by hand is yours alone: it never shows up in another account's search.

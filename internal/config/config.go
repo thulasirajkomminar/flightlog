@@ -21,6 +21,14 @@ type Config struct {
 	Database    DatabaseConfig    `envPrefix:"DATABASE_"`
 	AeroDataBox AeroDataBoxConfig `envPrefix:"AERODATABOX_"`
 	Auth        AuthConfig        `envPrefix:"AUTH_"`
+	Flights     FlightsConfig     `envPrefix:"FLIGHT_"`
+}
+
+// FlightsConfig holds flight data settings.
+type FlightsConfig struct {
+	// StatusRefresh lets the app spend API calls in the background to find
+	// out whether flights added before they flew have landed.
+	StatusRefresh bool `env:"STATUS_REFRESH" envDefault:"true"`
 }
 
 // ServerConfig holds server settings.
@@ -42,6 +50,18 @@ type AeroDataBoxConfig struct {
 // AuthConfig holds auth settings.
 type AuthConfig struct {
 	JWTSecret string `env:"JWT_SECRET,required"`
+	// RegistrationEnabled controls whether new accounts can be created.
+	RegistrationEnabled bool `env:"REGISTRATION_ENABLED" envDefault:"true"`
+}
+
+// minSecretLength is the shortest JWT secret that is not trivially guessable:
+// the length of `openssl rand -base64 24`.
+const minSecretLength = 32
+
+// WeakSecret reports whether the JWT secret is short enough to be guessed.
+// Anyone who can guess it can sign in as any user.
+func (c AuthConfig) WeakSecret() bool {
+	return len(c.JWTSecret) < minSecretLength
 }
 
 // Load parses environment variables into Config.

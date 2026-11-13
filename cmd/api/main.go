@@ -9,21 +9,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/thulasirajkomminar/flightlog/internal/airport"
 	"github.com/thulasirajkomminar/flightlog/internal/config"
-	"github.com/thulasirajkomminar/flightlog/internal/domain"
+	"github.com/thulasirajkomminar/flightlog/internal/database"
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
 	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
-	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/provider/aerodatabox"
 	"github.com/thulasirajkomminar/flightlog/internal/server"
 	"github.com/thulasirajkomminar/flightlog/internal/user"
@@ -32,11 +28,12 @@ import (
 
 const (
 	shutdownTimeout    = 10 * time.Second
-	dataDirPerm        = 0o750
 	serverReadTimeout  = 30 * time.Second
-	serverWriteTimeout = 10*time.Minute + 30*time.Second
+	serverWriteTimeout = 60 * time.Second
 	serverIdleTimeout  = 120 * time.Second
 )
+
+var errUsage = errors.New("usage")
 
 // version is set at build time via ldflags.
 var version = "dev"
@@ -54,7 +51,18 @@ func main() {
 
 	defer logger.Sync()
 
+	if isResetPassword(os.Args) {
+		err = runResetPassword(cfg, os.Args)
+		if err != nil {
+			appLogger.Error("Password reset failed", err)
+		}
+
+		return
+	}
+
 	appLogger.Info("Starting Flightlog API server")
+
+	warnAboutConfig(cfg, appLogger)
 
 	db, err := initDatabase(cfg, appLogger)
 	if err != nil {
@@ -63,7 +71,11 @@ func main() {
 		return
 	}
 
-	srv, err := buildServer(cfg, db)
+	// Cancelled on shutdown to stop background work such as the status refresher.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, err := buildServer(ctx, cfg, db)
 	if err != nil {
 		appLogger.Error("Failed to build server", err)
 
@@ -72,6 +84,14 @@ func main() {
 
 	startServer(srv, appLogger)
 	awaitShutdown(srv, db, appLogger)
+}
+
+// warnAboutConfig logs settings that work but are unsafe.
+func warnAboutConfig(cfg *config.Config, appLogger *logger.ComponentLogger) {
+	if cfg.Auth.WeakSecret() {
+		appLogger.Warn("AUTH_JWT_SECRET is short enough to be guessed; anyone who guesses it can sign in as any user. " +
+			"Generate a strong one with: openssl rand -base64 32")
+	}
 }
 
 func initLogger(cfg *config.Config) (*logger.ComponentLogger, error) {
@@ -129,25 +149,9 @@ func closeDatabase(db *gorm.DB, appLogger *logger.ComponentLogger) {
 }
 
 func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.DB, error) {
-	if dir := filepath.Dir(cfg.Database.Path); dir != "." {
-		err := os.MkdirAll(dir, dataDirPerm)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create data directory: %w", err)
-		}
-	}
-
-	db, err := gorm.Open(sqlite.Open(cfg.Database.Path+"?_journal_mode=WAL&_busy_timeout=5000"), &gorm.Config{
-		Logger: gormlogger.New(log.New(os.Stderr, "", log.LstdFlags), gormlogger.Config{
-			IgnoreRecordNotFoundError: true,
-		}),
-	})
+	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	err = db.AutoMigrate(&domain.Flight{}, &domain.UserFlight{}, &domain.User{}, &airport.Record{}, &airport.DistanceRecord{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to run database migration: %w", err)
+		return nil, fmt.Errorf("failed to initialise database: %w", err)
 	}
 
 	appLogger.Info("Database migration completed")
@@ -155,7 +159,24 @@ func initDatabase(cfg *config.Config, appLogger *logger.ComponentLogger) (*gorm.
 	return db, nil
 }
 
-func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
+// pingDatabase returns a health probe for the database.
+func pingDatabase(db *gorm.DB) func(context.Context) error {
+	return func(ctx context.Context) error {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fmt.Errorf("database handle: %w", err)
+		}
+
+		err = sqlDB.PingContext(ctx)
+		if err != nil {
+			return fmt.Errorf("ping database: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func buildServer(ctx context.Context, cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 	flightCacheStore := flight.NewCacheStore(db)
 	userFlightStore := flight.NewUserFlightStore(db)
 
@@ -167,30 +188,37 @@ func buildServer(cfg *config.Config, db *gorm.DB) (*http.Server, error) {
 	airportStore := airport.NewStore(db)
 	cachedLookup := airport.NewCachedLookup(airportStore, aeroProvider)
 
-	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup)
+	flightService := flight.NewService(flightCacheStore, userFlightStore, aeroProvider, cachedLookup).
+		WithLiveCoverage(aeroProvider).
+		WithAirports(cachedLookup)
 	flightHandler := flight.NewHandler(flightService)
-	providers := map[string]provider.FlightProvider{
-		aeroProvider.GetProviderName(): aeroProvider,
-	}
-	providerHandler := provider.NewHandler(providers)
 
-	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup)
+	// The loop always runs for housekeeping; status checks are optional.
+	flightService.WithStatusRefresh(cfg.Flights.StatusRefresh)
+
+	go flightService.RunRefresher(ctx)
+
+	importService := importer.NewService(flightService, flightService, flightCacheStore, cachedLookup).
+		WithJobRepository(importer.NewJobStore(db))
+	// Carry on with imports that a restart interrupted.
+	importService.ResumeInterrupted(ctx)
 	importHandler := importer.NewHandler(importService)
 
 	userStore := user.NewStore(db)
 	userService := user.NewService(userStore)
-	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret)
+	userHandler := user.NewHandler(userService, cfg.Auth.JWTSecret, cfg.Auth.RegistrationEnabled)
 
 	deps := &server.Dependencies{
-		FlightHandler:   flightHandler,
-		ImportHandler:   importHandler,
-		ProviderHandler: providerHandler,
-		UserHandler:     userHandler,
-		JWTSecret:       cfg.Auth.JWTSecret,
-		Version:         version,
-		WebFS:           web.Frontend(),
-		ScriptHashes:    web.InlineScriptHashes(),
-		TrustedProxies:  cfg.Server.TrustedProxies,
+		FlightHandler:  flightHandler,
+		ImportHandler:  importHandler,
+		UserHandler:    userHandler,
+		Sessions:       userService,
+		Ping:           pingDatabase(db),
+		JWTSecret:      cfg.Auth.JWTSecret,
+		Version:        version,
+		WebFS:          web.Frontend(),
+		ScriptHashes:   web.InlineScriptHashes(),
+		TrustedProxies: cfg.Server.TrustedProxies,
 	}
 	r := server.SetupRouter(deps)
 

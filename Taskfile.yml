@@ -40,6 +40,10 @@ tasks:
     desc: Generate Go client from OpenAPI specs
     cmd: go generate ./internal/provider/aerodatabox/api/...
 
+  airports:
+    desc: Refresh the bundled airport database from OurAirports
+    cmd: go run ./cmd/airports
+
   api:
     desc: Run Go API server
     cmd: go run ./cmd/api
@@ -47,6 +51,13 @@ tasks:
   web:
     desc: Run frontend dev server
     cmd: task web:dev
+
+  docs:
+    desc: Serve the documentation site locally with live reload (http://localhost:8001)
+    dir: docs
+    # Port 8001 rather than the mkdocs default of 8000, which editors and other
+    # local tools often occupy.
+    cmd: uv run --locked mkdocs serve --dev-addr localhost:8001
 
   dev:
     desc: Run API and frontend locally

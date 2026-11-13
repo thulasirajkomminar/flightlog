@@ -3,10 +3,12 @@ package flight
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,9 +22,12 @@ const (
 	maxListLimit        = 200
 	floatBitSize        = 64
 	errFlightIDRequired = "flight id is required"
-	errUnauthorized     = "unauthorized"
 	errInvalidDate      = "invalid date format, expected YYYY-MM-DD"
 	errInternal         = "internal server error"
+	paramID             = "id"
+
+	errProviderUnavailable = "flight data provider is unavailable, please try again later"
+	errProviderQuota       = "the flight data API quota is used up for now, please try again later"
 )
 
 // ErrInvalidStatus is returned when an unknown flight status is provided.
@@ -42,13 +47,6 @@ func NewHandler(flightService *Service) *Handler {
 
 // SearchFlights handles flight search by number and optional date.
 func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
-	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
-
 	flightNumber := r.URL.Query().Get("flight_number")
 	if flightNumber == "" {
 		api.RespondError(w, http.StatusBadRequest, "flight_number parameter is required")
@@ -75,9 +73,9 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	flights, err := h.flightService.SearchFlights(r.Context(), flightNumber, date)
+	flights, err := h.flightService.SearchFlights(r.Context(), api.GetUser(r).UserID, flightNumber, date)
 	if err != nil {
-		api.RespondError(w, http.StatusNotFound, "no flights found")
+		respondSearchError(w, err)
 
 		return
 	}
@@ -88,16 +86,29 @@ func (h *Handler) SearchFlights(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AddFlight links a cached flight to the authenticated user.
-func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
-	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
+// respondSearchError tells "the flight does not exist" apart from "the flight
+// data provider could not be reached", so quota or outage problems are visible.
+func respondSearchError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrNoFlightsFound) {
+		api.RespondError(w, http.StatusNotFound, "no flights found")
 
 		return
 	}
 
-	id := chi.URLParam(r, "id")
+	if errors.Is(err, domain.ErrProviderQuota) {
+		api.RespondError(w, http.StatusServiceUnavailable, errProviderQuota)
+
+		return
+	}
+
+	api.RespondError(w, http.StatusBadGateway, errProviderUnavailable)
+}
+
+// AddFlight links a cached flight to the authenticated user.
+func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
+	user := api.GetUser(r)
+
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
@@ -106,16 +117,77 @@ func (h *Handler) AddFlight(w http.ResponseWriter, r *http.Request) {
 
 	err := h.flightService.AddFlight(r.Context(), user.UserID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrFlightAlreadyAdded) {
-			api.RespondError(w, http.StatusConflict, err.Error())
-		} else {
-			api.RespondError(w, http.StatusInternalServerError, errInternal)
-		}
+		respondCollectionError(w, err)
 
 		return
 	}
 
 	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "Flight added successfully"})
+}
+
+// CreateFlight adds a flight the user typed in by hand.
+func (h *Handler) CreateFlight(w http.ResponseWriter, r *http.Request) {
+	in, ok := decodeManual(w, r)
+	if !ok {
+		return
+	}
+
+	flight, err := h.flightService.CreateManual(r.Context(), api.GetUser(r).UserID, in)
+	if err != nil {
+		respondCollectionError(w, err)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusCreated, flight)
+}
+
+// UpdateFlight changes a flight the user imported or added by hand.
+func (h *Handler) UpdateFlight(w http.ResponseWriter, r *http.Request) {
+	in, ok := decodeManual(w, r)
+	if !ok {
+		return
+	}
+
+	flight, err := h.flightService.UpdateManual(r.Context(), api.GetUser(r).UserID, chi.URLParam(r, paramID), in)
+	if err != nil {
+		respondCollectionError(w, err)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, flight)
+}
+
+func decodeManual(w http.ResponseWriter, r *http.Request) (*ManualFlight, bool) {
+	var in ManualFlight
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&in)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, "invalid request body")
+
+		return nil, false
+	}
+
+	return &in, true
+}
+
+// respondCollectionError maps errors from changing a user's collection.
+func respondCollectionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrFlightAlreadyAdded):
+		api.RespondError(w, http.StatusConflict, domain.ErrFlightAlreadyAdded.Error())
+	case errors.Is(err, domain.ErrValidation):
+		api.RespondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrNotEditable):
+		api.RespondError(w, http.StatusForbidden, ErrNotEditable.Error())
+	case errors.Is(err, domain.ErrFlightNotFound):
+		api.RespondError(w, http.StatusNotFound, domain.ErrFlightNotFound.Error())
+	default:
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+	}
 }
 
 func parseIntParam(r *http.Request, key string) (int, bool) {
@@ -130,6 +202,18 @@ func parseIntParam(r *http.Request, key string) (int, bool) {
 	}
 
 	return v, true
+}
+
+// maxSearchText bounds the free-text filter of the flight list.
+const maxSearchText = 50
+
+func searchText(r *http.Request) string {
+	text := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(text) > maxSearchText {
+		text = text[:maxSearchText]
+	}
+
+	return text
 }
 
 func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria, error) {
@@ -150,6 +234,8 @@ func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria,
 		criteria.Year = v
 	}
 
+	criteria.Query = searchText(r)
+
 	if s := r.URL.Query().Get("status"); s != "" {
 		if !domain.ValidFlightStatus(domain.FlightStatus(s)) {
 			return criteria, fmt.Errorf("%w: %s", ErrInvalidStatus, s)
@@ -164,11 +250,6 @@ func parseCriteria(r *http.Request, userID string) (domain.FlightSearchCriteria,
 // ListFlights lists the authenticated user's flights.
 func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	criteria, err := parseCriteria(r, user.UserID)
 	if err != nil {
@@ -202,13 +283,8 @@ func (h *Handler) ListFlights(w http.ResponseWriter, r *http.Request) {
 // GetFlight returns a single flight by ID.
 func (h *Handler) GetFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
 
-		return
-	}
-
-	id := chi.URLParam(r, "id")
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
@@ -228,11 +304,6 @@ func (h *Handler) GetFlight(w http.ResponseWriter, r *http.Request) {
 // GetStats returns aggregated flight statistics.
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	stats, err := h.flightService.GetStats(r.Context(), user.UserID)
 	if err != nil {
@@ -244,14 +315,40 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	api.RespondJSON(w, http.StatusOK, stats)
 }
 
-// ExportFlights returns all user flights as a CSV file download.
-func (h *Handler) ExportFlights(w http.ResponseWriter, r *http.Request) {
-	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
+// GetBreakdown returns per-year totals and the most flown routes and airlines.
+func (h *Handler) GetBreakdown(w http.ResponseWriter, r *http.Request) {
+	breakdown, err := h.flightService.GetBreakdown(r.Context(), api.GetUser(r).UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
 
 		return
 	}
+
+	api.RespondJSON(w, http.StatusOK, breakdown)
+}
+
+// GetQuota returns the flight data provider's API quota as last reported.
+func (h *Handler) GetQuota(w http.ResponseWriter, _ *http.Request) {
+	api.RespondJSON(w, http.StatusOK, h.flightService.ProviderQuota())
+}
+
+// GetRoutes returns the distinct routes the user has flown, for the map.
+func (h *Handler) GetRoutes(w http.ResponseWriter, r *http.Request) {
+	user := api.GetUser(r)
+
+	routes, err := h.flightService.GetRoutes(r.Context(), user.UserID)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, errInternal)
+
+		return
+	}
+
+	api.RespondJSON(w, http.StatusOK, map[string]any{"routes": routes})
+}
+
+// ExportFlights returns all user flights as a CSV file download.
+func (h *Handler) ExportFlights(w http.ResponseWriter, r *http.Request) {
+	user := api.GetUser(r)
 
 	flights, err := h.flightService.ExportFlights(r.Context(), user.UserID)
 	if err != nil {
@@ -329,13 +426,8 @@ func formatTimePtr(t *time.Time) string {
 // DeleteFlight removes a flight from the user's collection.
 func (h *Handler) DeleteFlight(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
 
-		return
-	}
-
-	id := chi.URLParam(r, "id")
+	id := chi.URLParam(r, paramID)
 	if id == "" {
 		api.RespondError(w, http.StatusBadRequest, errFlightIDRequired)
 
@@ -344,7 +436,7 @@ func (h *Handler) DeleteFlight(w http.ResponseWriter, r *http.Request) {
 
 	err := h.flightService.DeleteFlight(r.Context(), user.UserID, id)
 	if err != nil {
-		api.RespondError(w, http.StatusInternalServerError, errInternal)
+		respondCollectionError(w, err)
 
 		return
 	}

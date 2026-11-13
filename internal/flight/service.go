@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/thulasirajkomminar/flightlog/internal/domain"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
@@ -15,16 +16,35 @@ import (
 // ErrNoFlightsFound is returned when no flights match.
 var ErrNoFlightsFound = errors.New("no flights found")
 
+var errUnexpectedResult = errors.New("unexpected provider result type")
+
 const (
 	logKeyFlightNumber = "flight_number"
 	logKeyDate         = "date"
+
+	// searchRefreshAge is how old a cached flight near its travel day may be
+	// before a search re-fetches it from the provider.
+	searchRefreshAge = 30 * time.Minute
+	// A search only re-fetches flights dated within this window around today.
+	searchRefreshDaysBefore = 3
+	searchRefreshDaysAhead  = 1
+
+	// How long a "no such flight" answer from the provider is reused.
+	pastMissTTL     = 7 * 24 * time.Hour
+	upcomingMissTTL = 6 * time.Hour
 )
 
 // CacheRepository manages cached flight data from providers.
 type CacheRepository interface {
 	Create(ctx context.Context, flight *domain.Flight) error
-	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
-	FindByNumberAndDate(ctx context.Context, flightNumber, flightDate string) ([]*domain.Flight, error)
+	Update(ctx context.Context, flight *domain.Flight) error
+	RecordStatusCheck(ctx context.Context, flightID string, checks int) error
+	FindRefreshDue(ctx context.Context, due *RefreshDue) ([]*domain.Flight, error)
+	FindMiss(ctx context.Context, flightNumber, flightDate string) (time.Time, bool)
+	SaveMiss(ctx context.Context, flightNumber, flightDate string, checkedAt time.Time) error
+	PruneMisses(ctx context.Context, before time.Time) (int64, error)
+	FindByRoute(ctx context.Context, ownerID, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByNumberAndDate(ctx context.Context, ownerID, flightNumber, flightDate string) ([]*domain.Flight, error)
 }
 
 // UserFlightRepository manages user-to-flight associations.
@@ -37,11 +57,19 @@ type UserFlightRepository interface {
 	Count(ctx context.Context, criteria *domain.FlightSearchCriteria) (int64, error)
 	GetYears(ctx context.Context, userID string) ([]int, error)
 	GetStats(ctx context.Context, userID string) (*domain.FlightStats, error)
+	GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error)
+	GetBreakdown(ctx context.Context, userID string) (*domain.FlightBreakdown, error)
 }
 
 // Provider defines the contract for flight data providers.
 type Provider interface {
-	SearchFlights(ctx context.Context, criteria map[string]string) ([]*domain.Flight, error)
+	// SearchFlights returns the flights with the given IATA flight number
+	// departing on date (YYYY-MM-DD).
+	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
+	// BackgroundAllowed reports whether non-essential calls may spend quota.
+	BackgroundAllowed() bool
+	// Quota returns what the provider last reported about the API quota.
+	Quota() domain.ProviderQuota
 	GetProviderName() string
 }
 
@@ -56,7 +84,13 @@ type Service struct {
 	userRepo   UserFlightRepository
 	provider   Provider
 	backfiller CacheBackfiller
-	log        *logger.ComponentLogger
+	coverage   LiveCoverage
+	airports   AirportResolver
+	// refreshOff disables background status checks.
+	refreshOff bool
+	// inflight shares one provider call between identical concurrent searches.
+	inflight singleflight.Group
+	log      *logger.ComponentLogger
 }
 
 // NewService creates a Service.
@@ -70,23 +104,24 @@ func NewService(cache CacheRepository, userRepo UserFlightRepository, provider P
 	}
 }
 
-// SearchFlights checks the flight cache first for the flight_number+date combo.
-// If not found, fetches from the provider and caches them.
-func (s *Service) SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+// SearchFlights checks the flight cache first for the flight_number+date combo,
+// including flights userID imported or added themselves.
+// If not found, or if a cached flight may have changed status since it was
+// cached, fetches from the provider and updates the cache.
+func (s *Service) SearchFlights(ctx context.Context, userID, flightNumber, date string) ([]*domain.Flight, error) {
+	now := time.Now().UTC()
+
 	if date == "" {
-		date = time.Now().UTC().Format("2006-01-02")
+		date = now.Format(time.DateOnly)
 	}
 
-	flights, err := s.cache.FindByNumberAndDate(ctx, flightNumber, date)
+	flights, err := s.cache.FindByNumberAndDate(ctx, userID, flightNumber, date)
 	if err == nil && len(flights) > 0 {
-		s.log.Debug("cache hit",
-			zap.String(logKeyFlightNumber, flightNumber),
-			zap.String(logKeyDate, date),
-			zap.Int("count", len(flights)),
-		)
-		formatFlightNumbers(flights)
+		return s.searchCached(ctx, flights, flightNumber, date, now), nil
+	}
 
-		return flights, nil
+	if s.recentlyMissed(ctx, flightNumber, date, now) {
+		return nil, fmt.Errorf("%w for %s on %s (remembered)", ErrNoFlightsFound, flightNumber, date)
 	}
 
 	s.log.Debug("cache miss, fetching from provider",
@@ -94,7 +129,7 @@ func (s *Service) SearchFlights(ctx context.Context, flightNumber, date string) 
 		zap.String(logKeyDate, date),
 	)
 
-	return s.fetchFromProvider(ctx, flightNumber, date)
+	return s.fetchShared(ctx, flightNumber, date)
 }
 
 // ListFlights returns a user's flights matching criteria.
@@ -110,6 +145,7 @@ func (s *Service) ListFlights(ctx context.Context, criteria *domain.FlightSearch
 	}
 
 	formatFlightNumbers(flights)
+	markEditable(flights, criteria.UserID)
 
 	return flights, total, nil
 }
@@ -147,6 +183,7 @@ func (s *Service) GetFlight(ctx context.Context, userID, flightID string) (*doma
 	}
 
 	uf.Flight.Number = domain.FormatFlightNumber(uf.Flight.Number)
+	uf.Flight.Editable = uf.Flight.ImportedBy != "" && uf.Flight.ImportedBy == userID
 
 	return &uf.Flight, nil
 }
@@ -188,13 +225,108 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*domain.FlightSt
 	return stats, nil
 }
 
-func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
-	criteria := map[string]string{
-		"flight_iata": flightNumber,
-		"flight_date": date,
+// GetBreakdown returns per-year totals and top routes and airlines for a user.
+func (s *Service) GetBreakdown(ctx context.Context, userID string) (*domain.FlightBreakdown, error) {
+	breakdown, err := s.userRepo.GetBreakdown(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("breakdown for user %s: %w", userID, err)
 	}
 
-	providerFlights, err := s.provider.SearchFlights(ctx, criteria)
+	return breakdown, nil
+}
+
+// ProviderQuota returns what the provider last reported about the API quota.
+func (s *Service) ProviderQuota() domain.ProviderQuota {
+	return s.provider.Quota()
+}
+
+// GetRoutes returns the distinct routes a user has flown.
+func (s *Service) GetRoutes(ctx context.Context, userID string) ([]*domain.Route, error) {
+	routes, err := s.userRepo.GetRoutes(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("routes for user %s: %w", userID, err)
+	}
+
+	return routes, nil
+}
+
+// searchCached returns cached flights, refreshing them from the provider first
+// when their status may be out of date. A failed refresh falls back to the cache.
+func (s *Service) searchCached(ctx context.Context, cached []*domain.Flight, flightNumber, date string, now time.Time) []*domain.Flight {
+	if anyStale(cached, now) {
+		fresh, err := s.fetchShared(ctx, flightNumber, date)
+		if err == nil {
+			return fresh
+		}
+	}
+
+	s.log.Debug("cache hit",
+		zap.String(logKeyFlightNumber, flightNumber),
+		zap.String(logKeyDate, date),
+		zap.Int("count", len(cached)),
+	)
+	formatFlightNumbers(cached)
+
+	return cached
+}
+
+// anyStale reports whether a search should re-fetch cached flights. That is
+// only worth a provider call around the day of travel, when gates, times and
+// status actually change: a flight weeks away, or long past, is served from
+// the cache however old the entry is.
+func anyStale(flights []*domain.Flight, now time.Time) bool {
+	from := now.AddDate(0, 0, -searchRefreshDaysBefore).Format(time.DateOnly)
+	to := now.AddDate(0, 0, searchRefreshDaysAhead).Format(time.DateOnly)
+
+	for _, f := range flights {
+		changing := !f.Status.IsFinal() && f.FlightDate >= from && f.FlightDate <= to
+		if changing && now.Sub(f.UpdatedAt) > searchRefreshAge {
+			return true
+		}
+	}
+
+	return false
+}
+
+// recentlyMissed reports whether the provider said "no such flight" for this
+// number and date recently enough that asking again would waste a call.
+func (s *Service) recentlyMissed(ctx context.Context, flightNumber, date string, now time.Time) bool {
+	checkedAt, found := s.cache.FindMiss(ctx, flightNumber, date)
+
+	return found && now.Sub(checkedAt) < missTTL(date, now)
+}
+
+// missTTL is how long a "no such flight" answer is trusted. A past date will
+// not gain a flight, so it is trusted for long; today's and future schedules
+// can still be published, so those are asked again sooner.
+func missTTL(date string, now time.Time) time.Duration {
+	if date < now.AddDate(0, 0, -1).Format(time.DateOnly) {
+		return pastMissTTL
+	}
+
+	return upcomingMissTTL
+}
+
+// fetchShared fetches from the provider, letting identical searches that
+// arrive at the same time (a double click, two browser tabs) share one call.
+func (s *Service) fetchShared(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+	result, err, _ := s.inflight.Do(flightNumber+"|"+date, func() (any, error) {
+		return s.fetchFromProvider(ctx, flightNumber, date)
+	})
+	if err != nil {
+		return nil, err //nolint:wrapcheck // already wrapped by fetchFromProvider
+	}
+
+	flights, ok := result.([]*domain.Flight)
+	if !ok {
+		return nil, errUnexpectedResult
+	}
+
+	return flights, nil
+}
+
+func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error) {
+	providerFlights, err := s.provider.SearchFlights(ctx, flightNumber, date)
 	if err != nil {
 		s.log.Error("provider search failed", err,
 			zap.String(logKeyFlightNumber, flightNumber),
@@ -205,6 +337,12 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	}
 
 	if len(providerFlights) == 0 {
+		// Remember the answer; failing to store it only costs a later call.
+		saveErr := s.cache.SaveMiss(ctx, flightNumber, date, time.Now().UTC())
+		if saveErr != nil {
+			s.log.Warn("failed to remember missing flight", zap.Error(saveErr))
+		}
+
 		return nil, fmt.Errorf("%w for %s on %s", ErrNoFlightsFound, flightNumber, date)
 	}
 
@@ -219,20 +357,10 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	for _, flight := range providerFlights {
 		flight.Number = domain.NormalizeFlightNumber(flight.Number)
 
-		cached, err := s.cache.FindByRoute(ctx, flight.Number, flight.FlightDate,
-			flight.Departure.Airport.IATA, flight.Arrival.Airport.IATA)
-		if err == nil {
-			result = append(result, cached)
-
-			continue
-		}
-
-		err = s.cache.Create(ctx, flight)
+		err := s.storeProviderFlight(ctx, flight)
 		if err != nil {
-			return nil, fmt.Errorf("cache flight %s: %w", flight.Number, err)
+			return nil, err
 		}
-
-		s.backfiller.BackfillFromFlight(ctx, flight)
 
 		result = append(result, flight)
 	}
@@ -240,6 +368,44 @@ func (s *Service) fetchFromProvider(ctx context.Context, flightNumber, date stri
 	formatFlightNumbers(result)
 
 	return result, nil
+}
+
+// storeProviderFlight caches a provider flight, overwriting the existing cache
+// entry for the same flight and route so its ID (and user links) are kept.
+func (s *Service) storeProviderFlight(ctx context.Context, flight *domain.Flight) error {
+	// Provider data is shared, so it only ever replaces a shared entry: a
+	// flight someone imported or typed in stays theirs, untouched.
+	cached, err := s.cache.FindByRoute(ctx, "", flight.Number, flight.FlightDate,
+		flight.Departure.Airport.IATA, flight.Arrival.Airport.IATA)
+	if err == nil {
+		flight.ID = cached.ID
+		flight.CreatedAt = cached.CreatedAt
+		flight.StatusChecks = cached.StatusChecks
+
+		err = s.cache.Update(ctx, flight)
+		if err != nil {
+			return fmt.Errorf("update cached flight %s: %w", flight.Number, err)
+		}
+
+		return nil
+	}
+
+	err = s.cache.Create(ctx, flight)
+	if err != nil {
+		return fmt.Errorf("cache flight %s: %w", flight.Number, err)
+	}
+
+	s.backfiller.BackfillFromFlight(ctx, flight)
+
+	return nil
+}
+
+// markEditable flags the flights the user may change: the ones they imported
+// or added by hand. Provider data is shared and cannot be edited.
+func markEditable(flights []*domain.Flight, userID string) {
+	for _, f := range flights {
+		f.Editable = f.ImportedBy != "" && f.ImportedBy == userID
+	}
 }
 
 func formatFlightNumbers(flights []*domain.Flight) {

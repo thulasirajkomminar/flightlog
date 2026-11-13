@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,13 +18,23 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 )
 
+const logKeyPath = "path"
+
 var (
 	errUnexpectedSignMethod = errors.New("unexpected signing method")
 	errInvalidClaims        = errors.New("invalid claims")
 )
 
-// Auth returns JWT validation middleware.
-func Auth(jwtSecret string) func(next http.Handler) http.Handler {
+// SessionChecker decides whether a correctly signed token is still accepted.
+type SessionChecker interface {
+	// SessionValid reports whether a token issued at issuedAt for userID is
+	// still good, for example that the account has not been deleted since.
+	SessionValid(ctx context.Context, userID string, issuedAt time.Time) (bool, error)
+}
+
+// Auth returns JWT validation middleware. A token must be correctly signed
+// and still accepted by sessions.
+func Auth(jwtSecret string, sessions SessionChecker) func(next http.Handler) http.Handler {
 	secret := []byte(jwtSecret)
 	log := logger.NewComponentLogger("auth")
 
@@ -32,7 +43,7 @@ func Auth(jwtSecret string) func(next http.Handler) http.Handler {
 			tokenStr := extractToken(r)
 			if tokenStr == "" {
 				log.Warn("missing auth token",
-					zap.String("path", r.URL.Path),
+					zap.String(logKeyPath, r.URL.Path),
 					zap.String("remote_addr", r.RemoteAddr),
 				)
 				http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
@@ -43,9 +54,23 @@ func Auth(jwtSecret string) func(next http.Handler) http.Handler {
 			claims, err := validateJWT(tokenStr, secret)
 			if err != nil {
 				log.Warn("invalid auth token",
-					zap.String("path", r.URL.Path),
+					zap.String(logKeyPath, r.URL.Path),
 					zap.String("remote_addr", r.RemoteAddr),
 				)
+				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+
+				return
+			}
+
+			valid, err := sessions.SessionValid(r.Context(), claims.UserID, issuedAt(claims))
+			if err != nil {
+				log.Error("session check failed", err, zap.String(logKeyPath, r.URL.Path))
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+
+				return
+			}
+
+			if !valid {
 				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 
 				return
@@ -55,6 +80,16 @@ func Auth(jwtSecret string) func(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// issuedAt returns when a token was issued; a token without that claim counts
+// as older than any cut-off.
+func issuedAt(claims *api.UserClaims) time.Time {
+	if claims.IssuedAt == nil {
+		return time.Time{}
+	}
+
+	return claims.IssuedAt.Time
 }
 
 func extractToken(r *http.Request) string {
@@ -105,7 +140,7 @@ func Logger(log *zap.Logger) func(next http.Handler) http.Handler {
 			log.Info("request",
 				zap.String("request_id", middleware.GetReqID(r.Context())),
 				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path),
+				zap.String(logKeyPath, r.URL.Path),
 				zap.String("remote_addr", r.RemoteAddr),
 				zap.Int("status", ww.Status()),
 				zap.Int("bytes", ww.BytesWritten()),
@@ -143,6 +178,10 @@ func RateLimitByUser(requests int, window time.Duration) func(next http.Handler)
 	return httprate.LimitBy(requests, window, api.UserRateKey)
 }
 
+// mapTileHost serves the dashboard map's basemap tiles. It must match the tile
+// URL in web/app/components/flight-map.tsx.
+const mapTileHost = "https://server.arcgisonline.com"
+
 // SecurityHeaders adds browser security headers to all responses.
 func SecurityHeaders(scriptHashes []string) func(http.Handler) http.Handler {
 	scriptSrc := "'self'"
@@ -153,9 +192,10 @@ func SecurityHeaders(scriptHashes []string) func(http.Handler) http.Handler {
 	csp := "default-src 'self'; " +
 		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data: https://server.arcgisonline.com; " +
+		"img-src 'self' data: blob:; " +
 		"font-src 'self' data:; " +
-		"connect-src 'self'; " +
+		// The map fetches its basemap tiles from the tile host.
+		"connect-src 'self' " + mapTileHost + "; " +
 		"base-uri 'self'; " +
 		"frame-ancestors 'none'"
 

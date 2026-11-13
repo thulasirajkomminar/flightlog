@@ -6,21 +6,23 @@ The list is intentionally short. There are two required variables; everything el
 
 ## Required
 
-| Variable              | What it is                                                                                                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AERODATABOX_API_KEY` | Your RapidAPI key for AeroDataBox. [How to get one](api-key.md).                                                                                                                            |
-| `AUTH_JWT_SECRET`     | The secret used to sign your login session token. **Use a strong, random value** — anything that can predict this can mint a session for any user. Generate with `openssl rand -base64 32`. |
+| Variable              | What it is                                                                                                                                                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AERODATABOX_API_KEY` | Your RapidAPI key for AeroDataBox. [How to get one](api-key.md).                                                                                                                                                                                                      |
+| `AUTH_JWT_SECRET`     | The secret used to sign your login session token. **Use a strong, random value** — anything that can predict this can mint a session for any user. Generate with `openssl rand -base64 32`. Flightlog logs a warning at start-up if it is shorter than 32 characters. |
 
 If either of these is missing, Flightlog will refuse to start.
 
 ## Optional
 
-| Variable                 | Default      | What it does                                                                                                                                                                                                                                                                   |
-| ------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ENVIRONMENT`            | `production` | Set to `development` to enable verbose console output and debug-mode UI affordances. Leave at `production` for any real deployment.                                                                                                                                            |
-| `SERVER_PORT`            | `8080`       | The port Flightlog listens on inside the container. You usually don't need to change this — change the host-side port mapping in `docker-compose.yml` instead.                                                                                                                 |
-| `SERVER_TRUSTED_PROXIES` | *(empty)*    | Comma-separated CIDR list of reverse proxies allowed to set `X-Forwarded-For` (e.g. `172.18.0.0/16`). Set this when Flightlog runs behind a reverse proxy so per-IP rate limiting sees real client IPs instead of the proxy's. Leave empty when Flightlog is exposed directly. |
-| `LOG_LEVEL`              | `info`       | One of `debug`, `info`, `warn`, `error`. Bump to `debug` when something's not behaving and you want to see what's happening.                                                                                                                                                   |
+| Variable                    | Default      | What it does                                                                                                                                                                                                                                                                   |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ENVIRONMENT`               | `production` | Set to `development` to enable verbose console output and debug-mode UI affordances. Leave at `production` for any real deployment.                                                                                                                                            |
+| `SERVER_PORT`               | `8080`       | The port Flightlog listens on inside the container. You usually don't need to change this — change the host-side port mapping in `docker-compose.yml` instead.                                                                                                                 |
+| `SERVER_TRUSTED_PROXIES`    | *(empty)*    | Comma-separated CIDR list of reverse proxies allowed to set `X-Forwarded-For` (e.g. `172.18.0.0/16`). Set this when Flightlog runs behind a reverse proxy so per-IP rate limiting sees real client IPs instead of the proxy's. Leave empty when Flightlog is exposed directly. |
+| `LOG_LEVEL`                 | `info`       | One of `debug`, `info`, `warn`, `error`. Bump to `debug` when something's not behaving and you want to see what's happening.                                                                                                                                                   |
+| `AUTH_REGISTRATION_ENABLED` | `true`       | Set to `false` to stop new accounts from being created — the **Sign up** link disappears and the API refuses registrations. Create your own account first, then switch it off. Existing accounts are unaffected.                                                               |
+| `FLIGHT_STATUS_REFRESH`     | `true`       | Flightlog checks in the background whether flights you added before they flew have landed, which costs up to three AeroDataBox calls per such flight. Set to `false` to never spend an API call unprompted; those flights then count as flown a day after their date.          |
 
 ## Example `.env`
 
@@ -48,5 +50,7 @@ In the recommended `docker-compose.yml`, that path is mounted from a named Docke
 volumes:
   - flightlog_data:/app/data
 ```
+
+The app runs as an unprivileged `flightlog` user inside the container. On start-up the container makes the data directory writable for that user, so volumes created by older versions keep working without any manual step.
 
 To back up Flightlog, **back up that volume**. To migrate to a new host, copy the volume contents (or use [Export](../usage/import-export.md#export) and re-import on the new instance — both work).

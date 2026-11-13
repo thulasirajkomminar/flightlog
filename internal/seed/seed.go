@@ -4,7 +4,6 @@ package seed
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"time"
 
@@ -379,8 +378,8 @@ func seedFlights(db *gorm.DB, r *rand.Rand, userID string) {
 		depMin := r.Intn(12) * 5
 		depTime := time.Date(flightDate.Year(), flightDate.Month(), flightDate.Day(),
 			depHour, depMin, 0, 0, time.UTC)
-		distM := haversine(dep.Lat, dep.Lon, arr.Lat, arr.Lon)
-		distKM := distM / 1000
+		distance := domain.DistanceBetween(domain.Location{Lat: dep.Lat, Lon: dep.Lon}, domain.Location{Lat: arr.Lat, Lon: arr.Lon})
+		distKM := distance.Km
 		durationMin := max(int(distKM/800*60)+r.Intn(31)-10, 45)
 		arrTime := depTime.Add(time.Duration(durationMin) * time.Minute)
 		delay := time.Duration(r.Intn(36)-5) * time.Minute
@@ -448,17 +447,11 @@ func seedFlights(db *gorm.DB, r *rand.Rand, userID string) {
 				Terminal:      terminals[r.Intn(len(terminals))],
 				Gate:          gate(),
 			},
-			GreatCircleDistance: domain.GreatCircleDistance{
-				Meter: distM,
-				Km:    distKM,
-				Mile:  distKM * 0.621371,
-				Nm:    distKM * 0.539957,
-				Feet:  distM * 3.28084,
-			},
-			LastUpdatedUtc: &arrRevised,
-			Provider:       "seed",
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			GreatCircleDistance: distance,
+			LastUpdatedUtc:      &arrRevised,
+			Provider:            "seed",
+			CreatedAt:           now,
+			UpdatedAt:           now,
 		}
 
 		flights = append(flights, f)
@@ -488,19 +481,6 @@ func seedFlights(db *gorm.DB, r *rand.Rand, userID string) {
 	}
 
 	log.Printf("seed: inserted %d flights for user %s", len(flights), userID)
-}
-
-func haversine(lat1, lon1, lat2, lon2 float64) float64 {
-	const r = 6371000
-
-	p1 := lat1 * math.Pi / 180
-	p2 := lat2 * math.Pi / 180
-	dp := (lat2 - lat1) * math.Pi / 180
-	dl := (lon2 - lon1) * math.Pi / 180
-	a := math.Sin(dp/2)*math.Sin(dp/2) +
-		math.Cos(p1)*math.Cos(p2)*math.Sin(dl/2)*math.Sin(dl/2)
-
-	return r * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
 func weightedStatuses() []string {

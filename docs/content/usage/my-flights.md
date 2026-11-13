@@ -28,6 +28,12 @@ Click the chevron on the right-hand side of any row and it opens up to show the 
 
 This is the cached snapshot from the moment you added the flight. Flightlog **doesn't re-poll AeroDataBox** to refresh historical flights — once it's in your log, it stays exactly the way it was when you saved it. Which is usually what you want for a historical record, but worth knowing if a flight was still in the air when you added it.
 
+## Searching and filtering
+
+The box above the list searches your whole log — every year at once — by flight number, airline, airport code, airport name or city. Type `tokyo`, `KL`, `LHR` or `emirates` and the year tabs make way for the matching flights.
+
+The **status** menu next to it narrows the list to landed, scheduled, in-the-air, cancelled or diverted flights. It works together with the search and with the year tabs.
+
 ## Deleting a flight
 
 The trash icon prompts for confirmation, then removes the flight permanently. The dashboard totals update immediately to reflect the deletion.
@@ -45,3 +51,9 @@ The top-right of the page holds the two data-portability buttons:
 - **Export** — dump your entire logbook to a CSV file.
 
 Both are covered in detail on the [Import & Export](import-export.md) page.
+
+## Editing a flight
+
+Flights you [added by hand](search-and-add.md#adding-a-flight-by-hand) or imported from a CSV have a pencil button next to the delete button. It opens the same form, so you can fix a date, a flight number or an airport.
+
+Flights that came from AeroDataBox can't be edited — that data is shared with every account on the instance. If one is wrong, delete it and add the flight by hand instead.

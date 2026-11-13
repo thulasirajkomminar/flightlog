@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -14,27 +15,30 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/flight"
 	"github.com/thulasirajkomminar/flightlog/internal/importer"
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
-	"github.com/thulasirajkomminar/flightlog/internal/provider"
 	"github.com/thulasirajkomminar/flightlog/internal/user"
 )
 
 const (
 	compressLevel  = 5
 	requestTimeout = 30 * time.Second
-	importTimeout  = 10 * time.Minute
 )
 
 const (
 	ipRequestsPerMinute   = 100
+	authAttemptsPerMinute = 10
 	userRequestsPerMinute = 200
 )
 
 // Dependencies holds router dependencies.
 type Dependencies struct {
-	FlightHandler   *flight.Handler
-	ImportHandler   *importer.Handler
-	ProviderHandler *provider.Handler
-	UserHandler     *user.Handler
+	FlightHandler *flight.Handler
+	ImportHandler *importer.Handler
+	UserHandler   *user.Handler
+
+	// Sessions decides whether a signed token is still accepted.
+	Sessions SessionChecker
+	// Ping checks that the database is reachable, for the health endpoint.
+	Ping func(ctx context.Context) error
 
 	JWTSecret      string
 	Version        string
@@ -55,30 +59,22 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	r.Use(ClientIP(deps.TrustedProxies))
 	r.Use(RateLimitByIP(ipRequestsPerMinute, 1*time.Minute))
 
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		err := json.NewEncoder(w).Encode(map[string]any{
-			"status":  "ok",
-			"time":    time.Now().Unix(),
-			"version": deps.Version,
-		})
-		if err != nil {
-			logger.GetLogger().Error("failed to encode health response", zap.Error(err))
-		}
-	})
+	r.Get("/health", healthHandler(deps))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public routes
 		r.Group(func(r chi.Router) {
 			r.Use(chimiddleware.Timeout(requestTimeout))
-			r.Post("/auth/register", deps.UserHandler.Register)
-			r.Post("/auth/login", deps.UserHandler.Login)
+			// Signing in and up get a much tighter limit than the rest of the
+			// API, to slow down password guessing.
+			r.With(RateLimitByIP(authAttemptsPerMinute, time.Minute)).Post("/auth/register", deps.UserHandler.Register)
+			r.With(RateLimitByIP(authAttemptsPerMinute, time.Minute)).Post("/auth/login", deps.UserHandler.Login)
+			r.Get("/auth/config", deps.UserHandler.Config)
 		})
 
 		// Authenticated routes
 		r.Group(func(r chi.Router) {
-			r.Use(Auth(deps.JWTSecret))
+			r.Use(Auth(deps.JWTSecret, deps.Sessions))
 			r.Use(RateLimitByUser(userRequestsPerMinute, 1*time.Minute))
 
 			r.Group(func(r chi.Router) {
@@ -86,12 +82,18 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 				r.Get("/auth/me", deps.UserHandler.GetProfile)
 				r.Put("/auth/me", deps.UserHandler.UpdateProfile)
+				r.Delete("/auth/me", deps.UserHandler.DeleteAccount)
+				r.Put("/auth/password", deps.UserHandler.ChangePassword)
 				r.Post("/auth/logout", deps.UserHandler.Logout)
 
-				r.Get("/providers/{provider}/flights/search", deps.ProviderHandler.SearchFlights)
+				r.Get("/provider/quota", deps.FlightHandler.GetQuota)
 				r.Get("/flights/search", deps.FlightHandler.SearchFlights)
 				r.Get("/flights/stats", deps.FlightHandler.GetStats)
+				r.Get("/flights/routes", deps.FlightHandler.GetRoutes)
+				r.Get("/flights/stats/breakdown", deps.FlightHandler.GetBreakdown)
 				r.Get("/flights", deps.FlightHandler.ListFlights)
+				r.Post("/flights", deps.FlightHandler.CreateFlight)
+				r.Put("/flights/{id}", deps.FlightHandler.UpdateFlight)
 				r.Get("/flights/export", deps.FlightHandler.ExportFlights)
 				r.Get("/flights/{id}", deps.FlightHandler.GetFlight)
 				r.Post("/flights/{id}/add", deps.FlightHandler.AddFlight)
@@ -99,12 +101,9 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 
 				r.Get("/import/sources", deps.ImportHandler.Sources)
 				r.Post("/import/preview", deps.ImportHandler.Preview)
-			})
-
-			// Import has its own timeout — not nested under the 30s group.
-			r.Group(func(r chi.Router) {
-				r.Use(chimiddleware.Timeout(importTimeout))
 				r.Post("/import", deps.ImportHandler.Import)
+				r.Get("/import/status", deps.ImportHandler.Status)
+				r.Post("/import/cancel", deps.ImportHandler.Cancel)
 			})
 		})
 	})
@@ -114,6 +113,36 @@ func SetupRouter(deps *Dependencies) *chi.Mux {
 	}
 
 	return r
+}
+
+// healthHandler reports whether the app can serve requests, which includes
+// being able to reach its database. It answers 503 when it cannot, so
+// container health checks notice.
+func healthHandler(deps *Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		status, code := "ok", http.StatusOK
+
+		if deps.Ping != nil {
+			err := deps.Ping(r.Context())
+			if err != nil {
+				logger.GetLogger().Error("health check failed", zap.Error(err))
+
+				status, code = "unavailable", http.StatusServiceUnavailable
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+
+		err := json.NewEncoder(w).Encode(map[string]any{
+			"status":  status,
+			"time":    time.Now().Unix(),
+			"version": deps.Version,
+		})
+		if err != nil {
+			logger.GetLogger().Error("failed to encode health response", zap.Error(err))
+		}
+	}
 }
 
 func addSPAHandler(r *chi.Mux, webFS fs.FS) {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -30,9 +31,11 @@ const (
 	retryBackoffBase = 2 * time.Second
 )
 
-// retryTransport wraps an http.RoundTripper and retries on 429 with exponential backoff.
+// retryTransport wraps an http.RoundTripper, retries on 429 with exponential
+// backoff, and reports each final response to the quota tracker.
 type retryTransport struct {
-	base http.RoundTripper
+	base  http.RoundTripper
+	quota *quota
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -43,6 +46,8 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxRetries {
+			t.quota.observe(resp.StatusCode, resp.Header, time.Now())
+
 			return resp, nil
 		}
 
@@ -64,7 +69,13 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Provider implements flight.Provider.
 type Provider struct {
 	client *api.Client
+	quota  *quota
 	log    *logger.ComponentLogger
+
+	// Live-tracked airports, from a free endpoint, kept in memory.
+	coverageMu      sync.Mutex
+	coverage        map[string]struct{}
+	coverageFetched time.Time
 }
 
 const (
@@ -74,9 +85,10 @@ const (
 
 // NewProvider creates a Provider.
 func NewProvider(apiKey string) (*Provider, error) {
+	q := &quota{}
 	httpClient := &http.Client{
 		Timeout:   defaultTimeout,
-		Transport: &retryTransport{base: http.DefaultTransport},
+		Transport: &retryTransport{base: http.DefaultTransport, quota: q},
 	}
 
 	client, err := api.NewClient(defaultBaseURL,
@@ -92,7 +104,50 @@ func NewProvider(apiKey string) (*Provider, error) {
 		return nil, fmt.Errorf("failed to create aerodatabox client: %w", err)
 	}
 
-	return &Provider{client: client, log: logger.NewComponentLogger("aerodatabox")}, nil
+	return &Provider{client: client, quota: q, log: logger.NewComponentLogger("aerodatabox")}, nil
+}
+
+// coverageTTL is how long the list of live-tracked airports is reused. A
+// failed fetch is also remembered for this long, so it is not retried on
+// every refresher run.
+const coverageTTL = 24 * time.Hour
+
+// LiveAirports returns the ICAO codes of airports with live flight status
+// updates. It uses a free-tier endpoint, so it costs no API quota. The result
+// is nil when the list could not be fetched.
+func (p *Provider) LiveAirports(ctx context.Context) (map[string]struct{}, error) {
+	p.coverageMu.Lock()
+	defer p.coverageMu.Unlock()
+
+	if !p.coverageFetched.IsZero() && time.Since(p.coverageFetched) < coverageTTL {
+		return p.coverage, nil
+	}
+
+	p.coverageFetched = time.Now()
+
+	airports, err := p.fetchLiveAirports(ctx)
+	if err != nil {
+		p.coverage = nil
+		p.log.Warn("could not fetch live-tracked airports", zap.Error(err))
+
+		return nil, err
+	}
+
+	p.coverage = airports
+	p.log.Info("fetched live-tracked airports", zap.Int("count", len(airports)))
+
+	return airports, nil
+}
+
+// Quota returns what the API last reported about the request quota.
+func (p *Provider) Quota() domain.ProviderQuota {
+	return p.quota.snapshot(time.Now())
+}
+
+// BackgroundAllowed reports whether non-essential calls, such as status
+// refreshes, may spend API quota right now.
+func (p *Provider) BackgroundAllowed() bool {
+	return p.quota.allowBackground(time.Now())
 }
 
 // GetProviderName returns the provider name.
@@ -100,11 +155,14 @@ func (p *Provider) GetProviderName() string {
 	return "aerodatabox"
 }
 
-// SearchFlights searches for flights.
-// Criteria keys: "flight_iata", "flight_date" (YYYY-MM-DD).
-func (p *Provider) SearchFlights(ctx context.Context, criteria map[string]string) ([]*domain.Flight, error) {
-	flightNumber := criteria["flight_iata"]
-	dateStr := criteria["flight_date"]
+// SearchFlights searches for flights by IATA flight number and date
+// (YYYY-MM-DD). An empty date means today.
+func (p *Provider) SearchFlights(ctx context.Context, flightNumber, dateStr string) ([]*domain.Flight, error) {
+	// While the API is refusing requests, answer at once instead of spending
+	// a call (and several retries) on a certain failure.
+	if p.quota.blocked(time.Now()) {
+		return nil, domain.ErrProviderQuota
+	}
 
 	if dateStr == "" {
 		dateStr = time.Now().UTC().Format("2006-01-02")
@@ -152,7 +210,7 @@ func parseFlightResults(body []byte, dateStr string) ([]*domain.Flight, error) {
 
 	flights := make([]*domain.Flight, 0, len(results))
 	for i := range results {
-		flights = append(flights, convertToFlight(&results[i], dateStr, body))
+		flights = append(flights, convertToFlight(&results[i], dateStr))
 	}
 
 	return flights, nil
@@ -261,7 +319,7 @@ type dateTimeResponse struct {
 	Local flexTime `json:"local"`
 }
 
-func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *domain.Flight {
+func convertToFlight(fc *flightResponse, flightDate string) *domain.Flight {
 	flight := &domain.Flight{
 		Number:          fc.Number,
 		FlightDate:      flightDate,
@@ -291,16 +349,6 @@ func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *dom
 		}
 	}
 
-	if fc.GreatCircleDistance != nil {
-		flight.GreatCircleDistance = domain.GreatCircleDistance{
-			Meter: fc.GreatCircleDistance.Meter,
-			Km:    fc.GreatCircleDistance.Km,
-			Mile:  fc.GreatCircleDistance.Mile,
-			Nm:    fc.GreatCircleDistance.Nm,
-			Feet:  fc.GreatCircleDistance.Feet,
-		}
-	}
-
 	if !fc.LastUpdatedUtc.IsZero() {
 		t := fc.LastUpdatedUtc.Time
 		flight.LastUpdatedUtc = &t
@@ -308,9 +356,26 @@ func convertToFlight(fc *flightResponse, flightDate string, rawBody []byte) *dom
 
 	flight.Departure = mapMovement(&fc.Departure)
 	flight.Arrival = mapMovement(&fc.Arrival)
-	flight.RawData = string(rawBody)
+
+	flight.GreatCircleDistance = mapDistance(fc.GreatCircleDistance, flight.Departure.Airport.Location, flight.Arrival.Airport.Location)
 
 	return flight
+}
+
+// mapDistance uses the provider's distance when present and otherwise
+// computes it from the airport coordinates.
+func mapDistance(d *greatCircleDistanceResponse, from, to domain.Location) domain.GreatCircleDistance {
+	if d == nil {
+		return domain.DistanceBetween(from, to)
+	}
+
+	return domain.GreatCircleDistance{
+		Meter: d.Meter,
+		Km:    d.Km,
+		Mile:  d.Mile,
+		Nm:    d.Nm,
+		Feet:  d.Feet,
+	}
 }
 
 func mapMovement(m *movementResponse) domain.Movement {
@@ -452,40 +517,6 @@ func setOptionalAirportFields(airport *domain.Airport, ac *api.AirportContract) 
 	}
 }
 
-// GetDistanceBetweenAirports retrieves great circle distance between two airports by IATA code.
-func (p *Provider) GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error) {
-	resp, err := p.client.GetAirportDistanceTime(ctx, api.Iata, fromIATA, toIATA, nil)
-	if err != nil {
-		return nil, fmt.Errorf("distance lookup failed for %s-%s: %w", fromIATA, toIATA, err)
-	}
-
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %d for distance %s-%s", ErrUnexpectedStatus, resp.StatusCode, fromIATA, toIATA)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read distance response: %w", err)
-	}
-
-	var dt api.AirportDistanceTimeContract
-
-	err = json.Unmarshal(body, &dt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode distance response: %w", err)
-	}
-
-	return &domain.GreatCircleDistance{
-		Meter: dt.GreatCircleDistance.Meter,
-		Km:    dt.GreatCircleDistance.Km,
-		Mile:  dt.GreatCircleDistance.Mile,
-		Nm:    dt.GreatCircleDistance.Nm,
-		Feet:  dt.GreatCircleDistance.Feet,
-	}, nil
-}
-
 func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, date time.Time) ([]byte, error) {
 	resp, err := p.client.GetFlightFlightOnSpecificDate(ctx,
 		api.FlightSearchByEnumNumber,
@@ -499,6 +530,8 @@ func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, dat
 
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
+	// The API answers 204 when it knows no such flight on that date. Every
+	// other non-200 status, including 404, is a failure.
 	if resp.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
@@ -514,8 +547,39 @@ func (p *Provider) fetchFlightData(ctx context.Context, flightNumber string, dat
 			zap.String("body", string(body)),
 		)
 
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, domain.ErrProviderQuota
+		}
+
 		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	return body, nil
+}
+
+func (p *Provider) fetchLiveAirports(ctx context.Context) (map[string]struct{}, error) {
+	resp, err := p.client.GetFeedAirports(ctx, api.FlightLiveUpdates)
+	if err != nil {
+		return nil, fmt.Errorf("live airports request failed: %w", err)
+	}
+
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d for live airports", ErrUnexpectedStatus, resp.StatusCode)
+	}
+
+	var list api.StringCollectionContract
+
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&list)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode live airports: %w", err)
+	}
+
+	airports := make(map[string]struct{}, len(list.Items))
+	for _, icao := range list.Items {
+		airports[strings.ToUpper(icao)] = struct{}{}
+	}
+
+	return airports, nil
 }

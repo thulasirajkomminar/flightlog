@@ -14,6 +14,10 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 	ErrValidation         = errors.New("validation error")
 	ErrFlightAlreadyAdded = errors.New("flight already added to your collection")
+	ErrFlightNotFound     = errors.New("flight not found")
+	// ErrProviderQuota means the flight data provider is refusing requests
+	// because the API quota is used up.
+	ErrProviderQuota = errors.New("flight data quota is used up")
 )
 
 // User represents a registered user entity.
@@ -24,6 +28,10 @@ type User struct {
 	Name         string    `json:"name"      gorm:"not null"                      example:"Thulasiraj Komminar"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+
+	// SessionsValidFrom invalidates older sessions: a login token issued
+	// before this moment is no longer accepted. Zero means no cut-off.
+	SessionsValidFrom time.Time `json:"-" gorm:"column:sessions_valid_from"`
 }
 
 // GenerateID creates a UUID for the user if not already set.

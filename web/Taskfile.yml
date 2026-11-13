@@ -34,6 +34,10 @@ tasks:
     desc: TypeScript type checking
     cmd: pnpm typecheck
 
+  test:
+    desc: Run frontend unit tests
+    cmd: pnpm test
+
   audit:
     desc: Frontend security audit
     cmd: pnpm audit
@@ -59,6 +63,7 @@ tasks:
       - task: typecheck
       - task: lint
       - task: format-check
+      - task: test
       - task: build
       - task: deadcode
       - task: depcheck

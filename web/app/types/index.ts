@@ -1,10 +1,16 @@
 export type {
   AuthResponse,
   Flight,
+  FlightBreakdown,
   FlightListResponse,
+  FlightRoute,
   FlightStats,
+  ImportJob,
   ImportPreview,
   ImportResult,
+  ManualFlightInput,
   Movement,
+  ProviderQuota,
+  RouteAirport,
   User,
 } from "./api"

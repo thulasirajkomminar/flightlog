@@ -1,4 +1,4 @@
-// Package airport provides persistent caching for airport and distance lookups.
+// Package airport provides persistent caching for airport lookups.
 package airport
 
 import (
@@ -56,43 +56,7 @@ func recordFromDomain(a *domain.Airport) *Record {
 	}
 }
 
-// DistanceRecord is a cached route distance.
-type DistanceRecord struct {
-	RouteKey string  `gorm:"primaryKey;column:route_key"`
-	Meter    float64 `gorm:"column:meter"`
-	Km       float64 `gorm:"column:km"`
-	Mile     float64 `gorm:"column:mile"`
-	Nm       float64 `gorm:"column:nm"`
-	Feet     float64 `gorm:"column:feet"`
-}
-
-// TableName overrides the GORM table name.
-func (*DistanceRecord) TableName() string {
-	return "distance_cache"
-}
-
-func (r *DistanceRecord) toDomain() *domain.GreatCircleDistance {
-	return &domain.GreatCircleDistance{
-		Meter: r.Meter,
-		Km:    r.Km,
-		Mile:  r.Mile,
-		Nm:    r.Nm,
-		Feet:  r.Feet,
-	}
-}
-
-func distanceFromDomain(fromIATA, toIATA string, d *domain.GreatCircleDistance) *DistanceRecord {
-	return &DistanceRecord{
-		RouteKey: fromIATA + "-" + toIATA,
-		Meter:    d.Meter,
-		Km:       d.Km,
-		Mile:     d.Mile,
-		Nm:       d.Nm,
-		Feet:     d.Feet,
-	}
-}
-
-// Store persists airport and distance data in SQLite.
+// Store persists airport data in SQLite.
 type Store struct {
 	db *gorm.DB
 }
@@ -117,28 +81,6 @@ func (s *Store) FindAirport(ctx context.Context, iata string) (*domain.Airport, 
 // SaveAirport inserts or updates an airport.
 func (s *Store) SaveAirport(ctx context.Context, a *domain.Airport) error {
 	rec := recordFromDomain(a)
-
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(rec).Error
-}
-
-// FindDistance looks up a cached distance by route pair, checking both directions.
-func (s *Store) FindDistance(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error) {
-	var rec DistanceRecord
-
-	key := fromIATA + "-" + toIATA
-	reverseKey := toIATA + "-" + fromIATA
-
-	err := s.db.WithContext(ctx).Where("route_key IN ?", []string{key, reverseKey}).First(&rec).Error
-	if err != nil {
-		return nil, fmt.Errorf("find distance %s: %w", key, err)
-	}
-
-	return rec.toDomain(), nil
-}
-
-// SaveDistance inserts or updates a route distance.
-func (s *Store) SaveDistance(ctx context.Context, fromIATA, toIATA string, d *domain.GreatCircleDistance) error {
-	rec := distanceFromDomain(fromIATA, toIATA, d)
 
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(rec).Error
 }

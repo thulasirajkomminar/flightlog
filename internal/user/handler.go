@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -15,8 +16,12 @@ import (
 )
 
 const (
-	errUnauthorized = "unauthorized"
-	errInvalidBody  = "invalid request body"
+	keyMessage              = "message"
+	errInvalidBody          = "invalid request body"
+	errRegistrationDisabled = "registration is disabled on this instance"
+	// errWrongPassword is answered with 400 rather than 401: a 401 would tell
+	// the client its session has expired.
+	errWrongPassword = "current password is incorrect"
 )
 
 // RegisterRequest represents a user registration request.
@@ -44,24 +49,52 @@ type UpdateProfileRequest struct {
 	Name  string `json:"name"  example:"Thulasiraj Komminar"`
 }
 
-const defaultTokenExpiry = 24 * time.Hour
+// ChangePasswordRequest represents a password change request.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// DeleteAccountRequest confirms account deletion with the user's password.
+type DeleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
+const (
+	defaultTokenExpiry = 24 * time.Hour
+	authCookieName     = "flightlog_token"
+)
 
 // Handler handles auth and profile HTTP endpoints.
 type Handler struct {
-	userService *Service
-	jwtSecret   []byte
+	userService         *Service
+	jwtSecret           []byte
+	registrationEnabled bool
 }
 
-// NewHandler creates a Handler.
-func NewHandler(userService *Service, jwtSecret string) *Handler {
+// NewHandler creates a Handler. When registrationEnabled is false, no new
+// accounts can be created.
+func NewHandler(userService *Service, jwtSecret string, registrationEnabled bool) *Handler {
 	return &Handler{
-		userService: userService,
-		jwtSecret:   []byte(jwtSecret),
+		userService:         userService,
+		jwtSecret:           []byte(jwtSecret),
+		registrationEnabled: registrationEnabled,
 	}
+}
+
+// Config returns the public auth settings the sign-in pages need.
+func (h *Handler) Config(w http.ResponseWriter, _ *http.Request) {
+	api.RespondJSON(w, http.StatusOK, map[string]bool{"registrationEnabled": h.registrationEnabled})
 }
 
 // Register handles user registration.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	if !h.registrationEnabled {
+		api.RespondError(w, http.StatusForbidden, errRegistrationDisabled)
+
+		return
+	}
+
 	var req RegisterRequest
 
 	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
@@ -87,7 +120,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, defaultTokenExpiry)
+	setAuthCookie(w, r, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusCreated, AuthResponse{
 		Token: token,
@@ -128,7 +161,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, token, defaultTokenExpiry)
+	setAuthCookie(w, r, token, defaultTokenExpiry)
 
 	api.RespondJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
@@ -137,40 +170,38 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout clears the auth cookie.
-func (h *Handler) Logout(w http.ResponseWriter, _ *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "flightlog_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	setAuthCookie(w, r, "", -time.Second)
 
-	api.RespondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "logged out"})
 }
 
-func setAuthCookie(w http.ResponseWriter, token string, expiry time.Duration) {
+// setAuthCookie sets the session cookie; a negative expiry deletes it. The
+// cookie is marked Secure only when the request arrived over HTTPS, because
+// browsers drop Secure cookies on plain-HTTP origins other than localhost,
+// which would make login fail silently on a LAN deployment.
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string, expiry time.Duration) {
+	//nolint:gosec // G124: Secure is set whenever the request used HTTPS; forcing it breaks plain-HTTP LAN installs.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "flightlog_token",
+		Name:     authCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(expiry.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// isHTTPS reports whether the client reached the server over HTTPS, either
+// directly or through a TLS-terminating reverse proxy.
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // GetProfile returns the authenticated user's profile.
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	profile, err := h.userService.GetProfile(r.Context(), user.UserID)
 	if err != nil {
@@ -185,11 +216,6 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateProfile updates the authenticated user's profile.
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	user := api.GetUser(r)
-	if user == nil {
-		api.RespondError(w, http.StatusUnauthorized, errUnauthorized)
-
-		return
-	}
 
 	var req UpdateProfileRequest
 
@@ -222,6 +248,77 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.RespondJSON(w, http.StatusOK, profile)
+}
+
+// ChangePassword updates the authenticated user's password.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req ChangePasswordRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, errInvalidBody)
+
+		return
+	}
+
+	user, err := h.userService.ChangePassword(r.Context(), api.GetUser(r).UserID, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		respondPasswordError(w, err)
+
+		return
+	}
+
+	// The change ended every existing session, including this one: issue a
+	// fresh token so the person who changed the password stays signed in.
+	token, err := h.generateToken(user)
+	if err != nil {
+		api.RespondError(w, http.StatusInternalServerError, "failed to generate token")
+
+		return
+	}
+
+	setAuthCookie(w, r, token, defaultTokenExpiry)
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "password changed"})
+}
+
+// DeleteAccount permanently deletes the authenticated user's account.
+func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	var req DeleteAccountRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, api.MaxBodySize)
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		api.RespondError(w, http.StatusBadRequest, errInvalidBody)
+
+		return
+	}
+
+	err = h.userService.DeleteAccount(r.Context(), api.GetUser(r).UserID, req.Password)
+	if err != nil {
+		respondPasswordError(w, err)
+
+		return
+	}
+
+	setAuthCookie(w, r, "", -time.Second)
+	api.RespondJSON(w, http.StatusOK, map[string]string{keyMessage: "account deleted"})
+}
+
+// respondPasswordError maps errors from password-confirmed account actions.
+func respondPasswordError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrInvalidCredentials):
+		api.RespondError(w, http.StatusBadRequest, errWrongPassword)
+	case errors.Is(err, domain.ErrValidation):
+		api.RespondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrUserNotFound):
+		api.RespondError(w, http.StatusNotFound, domain.ErrUserNotFound.Error())
+	default:
+		api.RespondError(w, http.StatusInternalServerError, "request failed")
+	}
 }
 
 func (h *Handler) generateToken(user *domain.User) (string, error) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,6 +15,7 @@ import (
 )
 
 const (
+	logKeyUserID        = "user_id"
 	providerDaysLimit   = 365
 	searchThrottleDelay = 1 * time.Second
 )
@@ -29,7 +31,7 @@ var (
 
 // FlightSearcher finds flights by number and date.
 type FlightSearcher interface {
-	SearchFlights(ctx context.Context, flightNumber, date string) ([]*domain.Flight, error)
+	SearchFlights(ctx context.Context, userID, flightNumber, date string) ([]*domain.Flight, error)
 }
 
 // FlightLinker links a flight to a user.
@@ -40,23 +42,24 @@ type FlightLinker interface {
 // FlightCacher reads and writes the flight cache.
 type FlightCacher interface {
 	Create(ctx context.Context, flight *domain.Flight) error
-	FindByRoute(ctx context.Context, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
-	FindByDateAndRoute(ctx context.Context, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByRoute(ctx context.Context, ownerID, flightNumber, flightDate, depIATA, arrIATA string) (*domain.Flight, error)
+	FindByDateAndRoute(ctx context.Context, ownerID, flightDate, depIATA, arrIATA string) ([]*domain.Flight, error)
 }
 
-// AirportLookup resolves airport details and route distances.
+// AirportLookup resolves airport details.
 type AirportLookup interface {
 	GetAirportByIATA(ctx context.Context, iata string) (*domain.Airport, error)
-	GetDistanceBetweenAirports(ctx context.Context, fromIATA, toIATA string) (*domain.GreatCircleDistance, error)
 }
 
 // ImportResult summarises an import run.
 type ImportResult struct {
-	Total    int           `json:"total"`
-	Imported int           `json:"imported"`
-	Skipped  int           `json:"skipped"`
-	Failed   int           `json:"failed"`
-	Errors   []ImportError `json:"errors,omitempty"`
+	Total    int `json:"total"`
+	Imported int `json:"imported"`
+	Skipped  int `json:"skipped"`
+	Failed   int `json:"failed"`
+	// Cancelled is set when the user stopped the import before it finished.
+	Cancelled bool          `json:"cancelled,omitempty"`
+	Errors    []ImportError `json:"errors,omitempty"`
 }
 
 // ImportError records one failed entry.
@@ -79,7 +82,10 @@ type Service struct {
 	linker   FlightLinker
 	cacher   FlightCacher
 	airports AirportLookup
-	log      *logger.ComponentLogger
+	jobs     JobRepository
+	// cancels holds the stop function of each user's running import.
+	cancels sync.Map
+	log     *logger.ComponentLogger
 }
 
 // NewService returns a new import service.
@@ -95,6 +101,7 @@ func NewService(
 		linker:   linker,
 		cacher:   cacher,
 		airports: airports,
+		jobs:     newMemoryJobs(),
 		log:      logger.NewComponentLogger("importer"),
 	}
 
@@ -152,6 +159,23 @@ func (s *Service) Parse(source string, r io.Reader) ([]ImportEntry, error) {
 	return entries, nil
 }
 
+// record counts the outcome of importing one entry.
+func (r *ImportResult) record(entry *ImportEntry, err error) {
+	switch {
+	case err == nil:
+		r.Imported++
+	case errors.Is(err, domain.ErrFlightAlreadyAdded):
+		r.Skipped++
+	default:
+		r.Failed++
+		r.Errors = append(r.Errors, ImportError{
+			FlightNumber: entry.FlightNumber,
+			Date:         entry.Date,
+			Reason:       err.Error(),
+		})
+	}
+}
+
 type importOptions struct {
 	userID string
 	source string
@@ -161,33 +185,38 @@ type importOptions struct {
 
 // Import processes parsed entries: deduplicates, optionally enriches from the provider, and links to the user.
 func (s *Service) Import(ctx context.Context, userID string, entries []ImportEntry, source string, enrich bool) *ImportResult {
-	result := &ImportResult{Total: len(entries)}
+	job := &PendingJob{UserID: userID, Source: source, Enrich: enrich, Entries: entries}
+
+	return s.run(ctx, job, func(int, *ImportResult) {})
+}
+
+// run imports a job's entries one by one, starting after those already
+// processed, and reports progress after each entry.
+func (s *Service) run(ctx context.Context, job *PendingJob, onProgress func(processed int, soFar *ImportResult)) *ImportResult {
+	result := job.Result
+	if result == nil {
+		result = &ImportResult{}
+	}
+
+	result.Total = len(job.Entries)
 
 	opts := importOptions{
-		userID: userID,
-		source: source,
-		enrich: enrich,
+		userID: job.UserID,
+		source: job.Source,
+		enrich: job.Enrich,
 		cutoff: time.Now().AddDate(0, 0, -providerDaysLimit).Format("2006-01-02"),
 	}
 
-	for i := range entries {
-		err := s.importEntry(ctx, &entries[i], opts)
-		if err != nil {
-			if errors.Is(err, domain.ErrFlightAlreadyAdded) {
-				result.Skipped++
-			} else {
-				result.Failed++
-				result.Errors = append(result.Errors, ImportError{
-					FlightNumber: entries[i].FlightNumber,
-					Date:         entries[i].Date,
-					Reason:       err.Error(),
-				})
-			}
+	for i := job.Processed; i < len(job.Entries); i++ {
+		// Stopped by the user: what was imported so far is kept.
+		if ctx.Err() != nil {
+			result.Cancelled = true
 
-			continue
+			break
 		}
 
-		result.Imported++
+		result.record(&job.Entries[i], s.importEntry(ctx, &job.Entries[i], opts))
+		onProgress(i+1, result)
 	}
 
 	s.log.Info("import completed",
@@ -205,18 +234,20 @@ func (s *Service) importEntry(
 	entry *ImportEntry,
 	opts importOptions,
 ) error {
-	if id, ok := s.findCached(ctx, entry); ok {
+	if id, ok := s.findCached(ctx, opts.userID, entry); ok {
 		return s.linkFlight(ctx, opts.userID, id)
 	}
 
 	if opts.enrich && entry.Date >= opts.cutoff {
-		flightID, found := s.tryEnrich(ctx, entry)
+		flightID, found := s.tryEnrich(ctx, opts.userID, entry)
 		if found {
 			return s.linkFlight(ctx, opts.userID, flightID)
 		}
 	}
 
 	flight := s.createFromImport(ctx, entry, opts.source)
+	// A flight built from someone's file is theirs alone; see domain.Flight.
+	flight.ImportedBy = opts.userID
 
 	err := s.cacher.Create(ctx, flight)
 	if err != nil {
@@ -226,28 +257,71 @@ func (s *Service) importEntry(
 	return s.linkFlight(ctx, opts.userID, flight.ID)
 }
 
-func (s *Service) findCached(ctx context.Context, entry *ImportEntry) (string, bool) {
-	cached, err := s.cacher.FindByRoute(ctx, entry.FlightNumber, entry.Date, entry.DepIATA, entry.ArrIATA)
+func (s *Service) findCached(ctx context.Context, userID string, entry *ImportEntry) (string, bool) {
+	cached, err := s.cacher.FindByRoute(ctx, userID, entry.FlightNumber, entry.Date, entry.DepIATA, entry.ArrIATA)
 	if err == nil && cached != nil {
 		return cached.ID, true
 	}
 
-	// Fallback: match by date+route only (handles ICAO/IATA flight number differences).
-	cached, err = s.cacher.FindByDateAndRoute(ctx, entry.Date, entry.DepIATA, entry.ArrIATA)
-	if err == nil && cached != nil {
-		return cached.ID, true
+	// Fallback: the same flight may be cached under its ICAO number ("KLM1001")
+	// while the file has the IATA one ("KL1001"), or the other way round.
+	candidates, err := s.cacher.FindByDateAndRoute(ctx, userID, entry.Date, entry.DepIATA, entry.ArrIATA)
+	if err != nil {
+		return "", false
+	}
+
+	for _, c := range candidates {
+		if sameFlightNumber(entry.FlightNumber, c.Number) {
+			return c.ID, true
+		}
 	}
 
 	return "", false
 }
 
-func (s *Service) tryEnrich(
-	ctx context.Context,
-	entry *ImportEntry,
-) (string, bool) {
+const (
+	iataPrefixLen = 2
+	icaoPrefixLen = 3
+)
+
+// sameFlightNumber reports whether two flight numbers denote the same flight,
+// allowing one to use the 3-letter ICAO airline prefix and the other the
+// 2-character IATA prefix. Different airlines on the same route and day do not match.
+func sameFlightNumber(a, b string) bool {
+	a = domain.NormalizeFlightNumber(a)
+	b = domain.NormalizeFlightNumber(b)
+
+	if a == b {
+		return true
+	}
+
+	return icaoMatchesIATA(a, b) || icaoMatchesIATA(b, a)
+}
+
+// icaoMatchesIATA reports whether icao ("KLM1001") and iata ("KL1001") share
+// the same numeric part.
+func icaoMatchesIATA(icao, iata string) bool {
+	if len(icao) <= icaoPrefixLen || len(iata) <= iataPrefixLen || !isLetters(icao[:icaoPrefixLen]) {
+		return false
+	}
+
+	return icao[icaoPrefixLen:] == iata[iataPrefixLen:]
+}
+
+func isLetters(s string) bool {
+	for i := range len(s) {
+		if s[i] < 'A' || s[i] > 'Z' {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Service) tryEnrich(ctx context.Context, userID string, entry *ImportEntry) (string, bool) {
 	time.Sleep(searchThrottleDelay)
 
-	flight, enrichErr := s.enrichFromProvider(ctx, entry)
+	flight, enrichErr := s.enrichFromProvider(ctx, userID, entry)
 	if enrichErr == nil && flight != nil {
 		return flight.ID, true
 	}
@@ -261,8 +335,8 @@ func (s *Service) tryEnrich(
 	return "", false
 }
 
-func (s *Service) enrichFromProvider(ctx context.Context, entry *ImportEntry) (*domain.Flight, error) {
-	flights, err := s.searcher.SearchFlights(ctx, entry.FlightNumber, entry.Date)
+func (s *Service) enrichFromProvider(ctx context.Context, userID string, entry *ImportEntry) (*domain.Flight, error) {
+	flights, err := s.searcher.SearchFlights(ctx, userID, entry.FlightNumber, entry.Date)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -328,17 +402,9 @@ func (s *Service) createFromImport(
 	}
 
 	if entry.DistanceKm > 0 {
-		flight.GreatCircleDistance = distanceFromKm(entry.DistanceKm)
+		flight.GreatCircleDistance = domain.DistanceFromKm(entry.DistanceKm)
 	} else {
-		dist, err := s.airports.GetDistanceBetweenAirports(ctx, entry.DepIATA, entry.ArrIATA)
-		if err != nil {
-			s.log.Warn("distance lookup failed",
-				zap.String("route", entry.DepIATA+"-"+entry.ArrIATA),
-				zap.Error(err),
-			)
-		} else {
-			flight.GreatCircleDistance = *dist
-		}
+		flight.GreatCircleDistance = domain.DistanceBetween(flight.Departure.Airport.Location, flight.Arrival.Airport.Location)
 	}
 
 	return flight
@@ -381,21 +447,4 @@ func (s *Service) linkFlight(ctx context.Context, userID, flightID string) error
 	}
 
 	return nil
-}
-
-const (
-	metersPerKm   = 1000
-	milesPerKm    = 0.621371
-	nauticalPerKm = 0.539957
-	feetPerKm     = 3280.84
-)
-
-func distanceFromKm(km float64) domain.GreatCircleDistance {
-	return domain.GreatCircleDistance{
-		Km:    km,
-		Meter: km * metersPerKm,
-		Mile:  km * milesPerKm,
-		Nm:    km * nauticalPerKm,
-		Feet:  km * feetPerKm,
-	}
 }

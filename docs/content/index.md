@@ -19,6 +19,8 @@ You get a world map of your trips, totals you can show off (distance, hours in t
 
 ![Flightlog dashboard](assets/screenshots/02-dashboard-page.png)
 
+![Flightlog dashboard statistics](assets/screenshots/02-dashboard-page_2.png)
+
 ## What you can do with it
 
 <div class="grid cards" markdown>
@@ -69,4 +71,4 @@ The fastest way to try Flightlog is the published Docker image — it takes two 
 ---
 
 !!! note "Why self-hosted?"
-    Your flight history is surprisingly personal — it's a map of where you've been and when. Flightlog runs on your own hardware (a tiny VPS, a homelab, a Raspberry Pi), keeps the database next to it, and never phones home. The only outbound call is to AeroDataBox to look up flight details — and even that's cached so the same flight is only ever fetched once.
+    Your flight history is surprisingly personal — it's a map of where you've been and when. Flightlog runs on your own hardware (a tiny VPS, a homelab, a Raspberry Pi), keeps the database next to it, and never phones home. The only outbound call is to AeroDataBox to look up flight details — and that's cached, so a flight is only fetched again when its status could have changed. It's meant for a private network: see [where to run it](getting-started/deployment.md#where-to-run-it).

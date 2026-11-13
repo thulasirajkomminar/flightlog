@@ -2,9 +2,12 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -13,7 +16,12 @@ import (
 	"github.com/thulasirajkomminar/flightlog/internal/logger"
 )
 
-const minPasswordLength = 8
+const (
+	minPasswordLength = 8
+	// generatedPasswordBytes of randomness give a 16-character password.
+	generatedPasswordBytes = 12
+	logKeyUserID           = "user_id"
+)
 
 // Repository defines the contract for user persistence.
 type Repository interface {
@@ -21,6 +29,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
+	Delete(ctx context.Context, id string) error
 }
 
 // Service implements user operations.
@@ -39,6 +48,8 @@ func NewService(repo Repository) *Service {
 
 // Register creates a new user account.
 func (s *Service) Register(ctx context.Context, email, password, name string) (*domain.User, error) {
+	email = normalizeEmail(email)
+
 	err := validateRegistration(email, password, name)
 	if err != nil {
 		return nil, err
@@ -70,14 +81,14 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	s.log.Info("user registered", zap.String("user_id", user.ID))
+	s.log.Info("user registered", zap.String(logKeyUserID, user.ID))
 
 	return user, nil
 }
 
 // Authenticate verifies user credentials.
 func (s *Service) Authenticate(ctx context.Context, email, password string) (*domain.User, error) {
-	user, err := s.repo.GetByEmail(ctx, email)
+	user, err := s.repo.GetByEmail(ctx, normalizeEmail(email))
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			s.log.Warn("login attempt for unknown email")
@@ -90,12 +101,12 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*do
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		s.log.Warn("invalid password attempt", zap.String("user_id", user.ID))
+		s.log.Warn("invalid password attempt", zap.String(logKeyUserID, user.ID))
 
 		return nil, domain.ErrInvalidCredentials
 	}
 
-	s.log.Info("user authenticated", zap.String("user_id", user.ID))
+	s.log.Info("user authenticated", zap.String(logKeyUserID, user.ID))
 
 	return user, nil
 }
@@ -116,6 +127,8 @@ func (s *Service) GetProfile(ctx context.Context, userID string) (*domain.User, 
 
 // UpdateProfile updates a user's name and email.
 func (s *Service) UpdateProfile(ctx context.Context, userID, email, name string) (*domain.User, error) {
+	email = normalizeEmail(email)
+
 	err := validateEmail(email)
 	if err != nil {
 		return nil, err
@@ -146,14 +159,144 @@ func (s *Service) UpdateProfile(ctx context.Context, userID, email, name string)
 	return user, nil
 }
 
+// ChangePassword replaces a user's password after verifying the current one.
+// Every session opened before the change stops working, so the caller must
+// issue a new one for the returned user.
+func (s *Service) ChangePassword(ctx context.Context, userID, current, replacement string) (*domain.User, error) {
+	user, err := s.verifyPassword(ctx, userID, current)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.setPassword(ctx, user, replacement)
+	if err != nil {
+		return nil, err
+	}
+
+	s.log.Info("password changed", zap.String(logKeyUserID, userID))
+
+	return user, nil
+}
+
+// ResetPassword gives the account with this email a new random password and
+// returns it. Existing sessions stop working. It is meant for the operator of
+// the instance, not for an HTTP endpoint.
+func (s *Service) ResetPassword(ctx context.Context, email string) (string, error) {
+	user, err := s.repo.GetByEmail(ctx, normalizeEmail(email))
+	if err != nil {
+		return "", fmt.Errorf("find user %s: %w", email, err)
+	}
+
+	random := make([]byte, generatedPasswordBytes)
+
+	_, err = rand.Read(random)
+	if err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+
+	password := base64.RawURLEncoding.EncodeToString(random)
+
+	err = s.setPassword(ctx, user, password)
+	if err != nil {
+		return "", err
+	}
+
+	s.log.Info("password reset by operator", zap.String(logKeyUserID, user.ID))
+
+	return password, nil
+}
+
+// SessionValid reports whether a login token issued at issuedAt for userID is
+// still good: the account must exist and the token must not predate the
+// user's last password change.
+func (s *Service) SessionValid(ctx context.Context, userID string, issuedAt time.Time) (bool, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if errors.Is(err, domain.ErrUserNotFound) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("check session for user %s: %w", userID, err)
+	}
+
+	return !issuedAt.Before(user.SessionsValidFrom), nil
+}
+
+// DeleteAccount permanently removes a user and their flight collection after
+// verifying their password.
+func (s *Service) DeleteAccount(ctx context.Context, userID, password string) error {
+	_, err := s.verifyPassword(ctx, userID, password)
+	if err != nil {
+		return err
+	}
+
+	err = s.repo.Delete(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("delete user %s: %w", userID, err)
+	}
+
+	s.log.Info("account deleted", zap.String(logKeyUserID, userID))
+
+	return nil
+}
+
+// setPassword stores a new password and ends the user's existing sessions.
+func (s *Service) setPassword(ctx context.Context, user *domain.User, password string) error {
+	err := validatePassword(password)
+	if err != nil {
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	user.PasswordHash = string(hash)
+	// Token timestamps have one-second precision.
+	user.SessionsValidFrom = time.Now().UTC().Truncate(time.Second)
+
+	err = s.repo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("update password for user %s: %w", user.ID, err)
+	}
+
+	return nil
+}
+
+// verifyPassword loads a user and checks their password, returning
+// ErrInvalidCredentials on a mismatch.
+func (s *Service) verifyPassword(ctx context.Context, userID, password string) (*domain.User, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user %s: %w", userID, err)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		return nil, domain.ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
+func validatePassword(password string) error {
+	if len(password) < minPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", domain.ErrValidation, minPasswordLength)
+	}
+
+	return nil
+}
+
 func validateRegistration(email, password, name string) error {
 	err := validateEmail(email)
 	if err != nil {
 		return err
 	}
 
-	if len(password) < minPasswordLength {
-		return fmt.Errorf("%w: password must be at least %d characters", domain.ErrValidation, minPasswordLength)
+	err = validatePassword(password)
+	if err != nil {
+		return err
 	}
 
 	if name == "" {
@@ -161,6 +304,12 @@ func validateRegistration(email, password, name string) error {
 	}
 
 	return nil
+}
+
+// normalizeEmail makes addresses case-insensitive: "A@x.com" and "a@x.com"
+// are the same account.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 func validateEmail(email string) error {
@@ -177,7 +326,7 @@ func validateEmail(email string) error {
 }
 
 func (s *Service) checkEmailAvailability(ctx context.Context, newEmail, currentEmail string) error {
-	if newEmail == currentEmail {
+	if strings.EqualFold(newEmail, currentEmail) {
 		return nil
 	}
 

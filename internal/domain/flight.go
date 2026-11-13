@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // FlightStatus is an enum of possible flight lifecycle states.
@@ -29,6 +30,13 @@ func ValidFlightStatus(s FlightStatus) bool {
 	default:
 		return false
 	}
+}
+
+// IsFinal reports whether the status can no longer change, so the flight
+// never needs to be refreshed from the provider again.
+func (s FlightStatus) IsFinal() bool {
+	return s == FlightStatusLanded || s == FlightStatusCancelled ||
+		s == FlightStatusIncident || s == FlightStatusDiverted
 }
 
 // Location holds a WGS84 latitude/longitude pair.
@@ -67,13 +75,14 @@ type Movement struct {
 	BaggageBelt   string   `json:"baggageBelt,omitempty" example:"3"`
 }
 
-// GreatCircleDistance holds the route distance in multiple units.
+// GreatCircleDistance holds the route distance in multiple units. Only
+// kilometres are stored; the other units are derived when a flight is loaded.
 type GreatCircleDistance struct {
-	Meter float64 `json:"meter" example:"3223194.53"`
-	Km    float64 `json:"km"    example:"3223.19"`
-	Mile  float64 `json:"mile"  example:"2002.8"`
-	Nm    float64 `json:"nm"    example:"1740.39"`
-	Feet  float64 `json:"feet"  example:"10574785.22"`
+	Meter float64 `json:"meter" gorm:"-"         example:"3223194.53"`
+	Km    float64 `json:"km"    gorm:"column:km" example:"3223.19"`
+	Mile  float64 `json:"mile"  gorm:"-"         example:"2002.8"`
+	Nm    float64 `json:"nm"    gorm:"-"         example:"1740.39"`
+	Feet  float64 `json:"feet"  gorm:"-"         example:"10574785.22"`
 }
 
 // FlightAircraft holds registration and model info for an aircraft.
@@ -106,9 +115,20 @@ type Flight struct {
 	GreatCircleDistance GreatCircleDistance `json:"greatCircleDistance"       gorm:"embedded;embeddedPrefix:gcd_"`
 	LastUpdatedUtc      *time.Time          `json:"lastUpdatedUtc,omitempty"`
 	Provider            string              `json:"provider"                  example:"aerodatabox"`
-	RawData             string              `json:"-"                         gorm:"type:text"`
 	CreatedAt           time.Time           `json:"createdAt"                 example:"2026-03-17T12:00:00Z"`
 	UpdatedAt           time.Time           `json:"updatedAt"                 example:"2026-03-17T12:00:00Z"`
+
+	// ImportedBy is the user who created this flight from a file or by hand.
+	// Such a flight is private to them: nobody else's search or import
+	// reuses it. Empty for provider data, which is shared between users.
+	ImportedBy string `json:"-" gorm:"column:imported_by;not null;default:'';index"`
+
+	// Editable tells the client whether the signed-in user may change this
+	// flight; it is set per request and not stored.
+	Editable bool `json:"editable" gorm:"-"`
+
+	// StatusChecks counts background status checks spent on this flight.
+	StatusChecks int `json:"-" gorm:"column:status_checks;not null;default:0"`
 }
 
 // UserFlight represents the link between a user and a cached flight.
@@ -123,6 +143,8 @@ type UserFlight struct {
 // FlightSearchCriteria for searching flights.
 type FlightSearchCriteria struct {
 	UserID string
+	// Query is free text matched against flight number, airline and airports.
+	Query  string
 	Year   int
 	Status FlightStatus
 	Limit  int
@@ -136,6 +158,95 @@ type FlightStats struct {
 	FlightTime float64 `json:"flightTime"`
 	Airports   int     `json:"airports"`
 	Airlines   int     `json:"airlines"`
+}
+
+// FlightMiss records that the provider had no flight for a number and date,
+// so the same question is not asked again straight away.
+type FlightMiss struct {
+	FlightNumber string    `gorm:"primaryKey;column:flight_number"`
+	FlightDate   string    `gorm:"primaryKey;column:flight_date"`
+	CheckedAt    time.Time `gorm:"column:checked_at;not null"`
+}
+
+// TableName overrides the GORM table name.
+func (*FlightMiss) TableName() string {
+	return "flight_misses"
+}
+
+// YearStat summarises the flights flown in one year.
+type YearStat struct {
+	Year     int     `json:"year"`
+	Flights  int     `json:"flights"`
+	Distance float64 `json:"distance"`
+}
+
+// RouteStat counts flights between two airports, in either direction.
+type RouteStat struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Flights int    `json:"flights"`
+}
+
+// AirlineStat counts flights with one airline.
+type AirlineStat struct {
+	Name    string `json:"name"`
+	Flights int    `json:"flights"`
+}
+
+// MonthStat counts the flights flown in one calendar month.
+type MonthStat struct {
+	Year    int `json:"year"`
+	Month   int `json:"month"`
+	Flights int `json:"flights"`
+}
+
+// LongestFlight is the longest single flight a user has flown.
+type LongestFlight struct {
+	From     string  `json:"from"`
+	To       string  `json:"to"`
+	Distance float64 `json:"distance"`
+}
+
+// FlightBreakdown is a closer look at a user's flown flights.
+type FlightBreakdown struct {
+	Years     []YearStat    `json:"years"`
+	Months    []MonthStat   `json:"months"`
+	Routes    []RouteStat   `json:"routes"`
+	Airlines  []AirlineStat `json:"airlines"`
+	Countries int           `json:"countries"`
+	// Longest is nil when no flown flight has a known distance.
+	Longest *LongestFlight `json:"longest"`
+}
+
+// ProviderQuota is what the flight data provider last reported about the API
+// quota. It is only known after at least one call has been made.
+type ProviderQuota struct {
+	Known     bool `json:"known"`
+	Limit     int  `json:"limit"`
+	Remaining int  `json:"remaining"`
+	// PausedUntil is set while the provider is refusing requests.
+	PausedUntil *time.Time `json:"pausedUntil,omitempty"`
+}
+
+// RouteAirport is the airport data needed to draw one end of a route.
+type RouteAirport struct {
+	IATA     string   `json:"iata"`
+	Name     string   `json:"name"`
+	Location Location `json:"location"`
+}
+
+// Route is a distinct departure/arrival pair flown by a user.
+type Route struct {
+	Departure RouteAirport `json:"departure"`
+	Arrival   RouteAirport `json:"arrival"`
+	Flights   int          `json:"flights"`
+}
+
+// AfterFind fills in the distance units that are not stored.
+func (f *Flight) AfterFind(*gorm.DB) error {
+	f.GreatCircleDistance = DistanceFromKm(f.GreatCircleDistance.Km)
+
+	return nil
 }
 
 // GenerateID creates a UUID for the flight if not already set.

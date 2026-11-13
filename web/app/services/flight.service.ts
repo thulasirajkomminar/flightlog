@@ -1,14 +1,23 @@
 import { api } from "~/lib/api"
 import { API_ENDPOINTS } from "~/constants"
 
-import type { Flight, FlightListResponse, FlightStats } from "~/types"
+import type {
+  Flight,
+  FlightBreakdown,
+  FlightListResponse,
+  FlightRoute,
+  FlightStats,
+  ManualFlightInput,
+  ProviderQuota,
+} from "~/types"
 
 export const flightService = {
   async list(
     limit = 20,
     offset = 0,
     year?: number,
-    status?: string
+    status?: string,
+    query?: string
   ): Promise<FlightListResponse> {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -20,6 +29,9 @@ export const flightService = {
     if (status) {
       params.set("status", status)
     }
+    if (query) {
+      params.set("q", query)
+    }
     return api.get<FlightListResponse>(
       `${API_ENDPOINTS.FLIGHTS.LIST}?${params}`
     )
@@ -27,6 +39,21 @@ export const flightService = {
 
   async stats(): Promise<FlightStats> {
     return api.get<FlightStats>(API_ENDPOINTS.FLIGHTS.STATS)
+  },
+
+  async breakdown(): Promise<FlightBreakdown> {
+    return api.get<FlightBreakdown>(API_ENDPOINTS.FLIGHTS.BREAKDOWN)
+  },
+
+  async quota(): Promise<ProviderQuota> {
+    return api.get<ProviderQuota>(API_ENDPOINTS.PROVIDER.QUOTA)
+  },
+
+  async routes(): Promise<FlightRoute[]> {
+    const data = await api.get<{ routes: FlightRoute[] | null }>(
+      API_ENDPOINTS.FLIGHTS.ROUTES
+    )
+    return data.routes ?? []
   },
 
   async search(
@@ -50,16 +77,22 @@ export const flightService = {
     return api.post(API_ENDPOINTS.FLIGHTS.ADD(id))
   },
 
+  // Adds a flight typed in by hand to the user's collection.
+  async createManual(input: ManualFlightInput): Promise<Flight> {
+    return api.post<Flight>(API_ENDPOINTS.FLIGHTS.LIST, input)
+  },
+
+  // Changes a flight the user imported or added by hand.
+  async updateManual(id: string, input: ManualFlightInput): Promise<Flight> {
+    return api.put<Flight>(API_ENDPOINTS.FLIGHTS.BY_ID(id), input)
+  },
+
   async remove(id: string): Promise<void> {
     return api.delete(API_ENDPOINTS.FLIGHTS.BY_ID(id))
   },
 
   async exportFlights(): Promise<void> {
-    const response = await fetch(API_ENDPOINTS.FLIGHTS.EXPORT)
-    if (!response.ok) {
-      throw new Error("Failed to export flights")
-    }
-    const blob = await response.blob()
+    const blob = await api.download(API_ENDPOINTS.FLIGHTS.EXPORT)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url

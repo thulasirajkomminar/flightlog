@@ -9,10 +9,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": {
-        target: "http://localhost:8080",
-        timeout: 600000, // 10 minutes — matches server WriteTimeout
-      },
+      "/api": "http://localhost:8080",
     },
   },
 })
