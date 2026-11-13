@@ -51,6 +51,8 @@ volumes:
   - flightlog_data:/app/data
 ```
 
-The app runs as an unprivileged `flightlog` user inside the container. On start-up the container makes the data directory writable for that user, so volumes created by older versions keep working without any manual step.
+The app runs as an unprivileged `flightlog` user (UID 10001) inside the container. On start-up the container makes the data directory writable for that user, so volumes created by older versions keep working without any manual step.
+
+Some setups don't allow that hand-over: NFS or SMB shares, rootless Docker or Podman, or a container started with dropped capabilities. There Flightlog logs a short notice and keeps running as root, as earlier versions did. To run unprivileged anyway, make the data directory owned by UID 10001 on the host and add `user: "10001:10001"` to the service in your compose file.
 
 To back up Flightlog, **back up that volume**. To migrate to a new host, copy the volume contents (or use [Export](../usage/import-export.md#export) and re-import on the new instance — both work).
