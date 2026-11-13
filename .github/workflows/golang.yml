@@ -20,7 +20,7 @@ jobs:
           - testing-type: opa
           - testing-type: security-golang-modules
           - testing-type: unit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       TASK_X_REMOTE_TASKFILES: 1
     steps:
