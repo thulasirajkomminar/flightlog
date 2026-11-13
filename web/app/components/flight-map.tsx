@@ -156,15 +156,26 @@ function addAirportTooltip(map: MapLibreMap) {
     const feature = e.features?.[0]
     if (!feature || feature.geometry.type !== "Point") return
 
-    // Build the content from text nodes: names come from imported files.
+    // Nearby airports (two in one city) overlap when zoomed out, so list
+    // every airport under the pointer. Build the content from text nodes:
+    // names come from imported files.
     const content = document.createElement("div")
-    const code = document.createElement("span")
-    code.className = "font-medium"
-    code.textContent = String(feature.properties.iata)
-    const name = document.createElement("span")
-    name.className = "block text-xs"
-    name.textContent = String(feature.properties.name)
-    content.append(code, name)
+    const seen = new Set<string>()
+    for (const { properties } of e.features ?? []) {
+      const iata = String(properties.iata)
+      if (seen.has(iata)) continue
+      seen.add(iata)
+
+      const row = document.createElement("div")
+      const code = document.createElement("span")
+      code.className = "font-medium"
+      code.textContent = iata
+      const name = document.createElement("span")
+      name.className = "block text-xs"
+      name.textContent = String(properties.name)
+      row.append(code, name)
+      content.append(row)
+    }
 
     map.getCanvas().style.cursor = "pointer"
     popup
