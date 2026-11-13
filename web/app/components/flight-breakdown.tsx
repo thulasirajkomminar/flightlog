@@ -161,8 +161,9 @@ function Calendar({ breakdown }: { breakdown: Breakdown }) {
           More
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+      {/* Ten year rows fit; older years scroll under the month names. */}
+      <CardContent className="flex max-h-[19.75rem] flex-col gap-0.5 overflow-y-auto pb-0.5">
+        <div className="sticky top-0 z-10 flex items-center gap-0.5 bg-card text-[10px] text-muted-foreground">
           <span className="w-10 shrink-0" />
           {MONTHS.map((month) => (
             <span key={month} className="min-w-0 flex-1 text-center">
